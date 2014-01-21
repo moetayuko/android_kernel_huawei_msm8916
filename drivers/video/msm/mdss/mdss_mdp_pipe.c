@@ -643,15 +643,13 @@ static void mdss_mdp_qos_vbif_remapper_setup(struct mdss_data_type *mdata,
 
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 	for (i = 0; i < mdata->npriority_lvl; i++) {
-		reg_val = readl_relaxed(mdata->vbif_base +
-				MDSS_VBIF_QOS_REMAP_BASE + i*4);
+		reg_val = MDSS_VBIF_READ(mdata, MDSS_VBIF_QOS_REMAP_BASE + i*4);
 		mask = 0x3 << (pipe->xin_id * 2);
 		reg_val &= ~(mask);
 		vbif_qos = is_realtime ?
 			mdata->vbif_rt_qos[i] : mdata->vbif_nrt_qos[i];
 		reg_val |= vbif_qos << (pipe->xin_id * 2);
-		writel_relaxed(reg_val, mdata->vbif_base +
-				MDSS_VBIF_QOS_REMAP_BASE + i*4);
+		MDSS_VBIF_WRITE(mdata, MDSS_VBIF_QOS_REMAP_BASE + i*4, reg_val);
 	}
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 }
@@ -674,13 +672,13 @@ static void mdss_mdp_fixed_qos_arbiter_setup(struct mdss_data_type *mdata,
 
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 	mutex_lock(&mdata->reg_lock);
-	reg_val = readl_relaxed(mdata->vbif_base + MDSS_VBIF_FIXED_SORT_EN);
+	reg_val = MDSS_VBIF_READ(mdata, MDSS_VBIF_FIXED_SORT_EN);
 	mask = 0x1 << pipe->xin_id;
 	reg_val |= mask;
 
 	/* Enable the fixed sort for the client */
-	writel_relaxed(reg_val, mdata->vbif_base + MDSS_VBIF_FIXED_SORT_EN);
-	reg_val = readl_relaxed(mdata->vbif_base + MDSS_VBIF_FIXED_SORT_SEL0);
+	MDSS_VBIF_WRITE(mdata, MDSS_VBIF_FIXED_SORT_EN, reg_val);
+	reg_val = MDSS_VBIF_READ(mdata, MDSS_VBIF_FIXED_SORT_SEL0);
 	mask = 0x1 << (pipe->xin_id * 2);
 	if (is_realtime) {
 		reg_val &= ~mask;
@@ -692,7 +690,7 @@ static void mdss_mdp_fixed_qos_arbiter_setup(struct mdss_data_type *mdata,
 				pipe->type, pipe->num);
 	}
 	/* Set the fixed_sort regs as per RT/NRT client */
-	writel_relaxed(reg_val, mdata->vbif_base + MDSS_VBIF_FIXED_SORT_SEL0);
+	MDSS_VBIF_WRITE(mdata, MDSS_VBIF_FIXED_SORT_SEL0, reg_val);
 	mutex_unlock(&mdata->reg_lock);
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 }
@@ -1008,7 +1006,7 @@ static int mdss_mdp_is_pipe_idle(struct mdss_mdp_pipe *pipe,
 		goto exit;
 
 	vbif_idle_mask = BIT(pipe->xin_id + 16);
-	reg_val = readl_relaxed(mdata->vbif_base + MMSS_VBIF_XIN_HALT_CTRL1);
+	reg_val = MDSS_VBIF_READ(mdata, MMSS_VBIF_XIN_HALT_CTRL1);
 
 	if (reg_val & vbif_idle_mask)
 		is_idle = true;
@@ -1056,20 +1054,19 @@ int mdss_mdp_pipe_fetch_halt(struct mdss_mdp_pipe *pipe)
 		mutex_lock(&mdata->reg_lock);
 		idle_mask = BIT(pipe->xin_id + 16);
 
-		reg_val = readl_relaxed(mdata->vbif_base +
-			MMSS_VBIF_XIN_HALT_CTRL0);
-		writel_relaxed(reg_val | BIT(pipe->xin_id),
-			mdata->vbif_base + MMSS_VBIF_XIN_HALT_CTRL0);
+		reg_val = MDSS_VBIF_READ(mdata, MMSS_VBIF_XIN_HALT_CTRL0);
+		MDSS_VBIF_WRITE(mdata, MMSS_VBIF_XIN_HALT_CTRL0,
+				reg_val | BIT(pipe->xin_id));
 
 		if (sw_reset_avail) {
-			reg_val = readl_relaxed(mdata->mdp_base + sw_reset_off);
-			writel_relaxed(reg_val | BIT(pipe->sw_reset.bit_off),
-				mdata->mdp_base + sw_reset_off);
+			reg_val = MDSS_VBIF_READ(mdata, sw_reset_off);
+			MDSS_VBIF_WRITE(mdata, sw_reset_off,
+					reg_val | BIT(pipe->sw_reset.bit_off));
 			wmb();
 		}
 		mutex_unlock(&mdata->reg_lock);
 
-		rc = readl_poll_timeout(mdata->vbif_base +
+		rc = readl_poll_timeout(mdata->vbif_io.base +
 			MMSS_VBIF_XIN_HALT_CTRL1, status, (status & idle_mask),
 			1000, PIPE_HALT_TIMEOUT_US);
 		if (rc == -ETIMEDOUT)
@@ -1079,23 +1076,20 @@ int mdss_mdp_pipe_fetch_halt(struct mdss_mdp_pipe *pipe)
 			pr_debug("VBIF client %d is halted\n", pipe->xin_id);
 
 		mutex_lock(&mdata->reg_lock);
-		reg_val = readl_relaxed(mdata->vbif_base +
-			MMSS_VBIF_XIN_HALT_CTRL0);
-		writel_relaxed(reg_val & ~BIT(pipe->xin_id),
-			mdata->vbif_base + MMSS_VBIF_XIN_HALT_CTRL0);
+		reg_val = MDSS_VBIF_READ(mdata, MMSS_VBIF_XIN_HALT_CTRL0);
+		MDSS_VBIF_WRITE(mdata, MMSS_VBIF_XIN_HALT_CTRL0,
+				reg_val & ~BIT(pipe->xin_id));
 
 		if (sw_reset_avail) {
-			writel_relaxed(reg_val & ~BIT(pipe->sw_reset.bit_off),
-				mdata->mdp_base + sw_reset_off);
+			MDSS_VBIF_WRITE(mdata, sw_reset_off,
+					reg_val & ~BIT(pipe->sw_reset.bit_off));
 			wmb();
 
-			reg_val = readl_relaxed(mdata->mdp_base + clk_ctrl_off);
+			reg_val = MDSS_VBIF_READ(mdata, clk_ctrl_off);
 			reg_val |= BIT(pipe->clk_ctrl.bit_off +
 				CLK_FORCE_OFF_OFFSET);
-			writel_relaxed(reg_val,
-				mdata->mdp_base + clk_ctrl_off);
+			MDSS_VBIF_WRITE(mdata, clk_ctrl_off, reg_val);
 		}
-
 		mutex_unlock(&mdata->reg_lock);
 		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 	}
@@ -1399,7 +1393,7 @@ int mdss_mdp_pipe_addr_setup(struct mdss_data_type *mdata,
 		head[i].num = i + num_base;
 		head[i].ndx = BIT(i + num_base);
 		head[i].priority = i + priority_base;
-		head[i].base = mdata->mdss_base + offsets[i];
+		head[i].base = mdata->mdss_io.base + offsets[i];
 		pr_info("type:%d ftchid:%d xinid:%d num:%d ndx:0x%x prio:%d\n",
 			head[i].type, head[i].ftch_id, head[i].xin_id,
 			head[i].num, head[i].ndx, head[i].priority);
