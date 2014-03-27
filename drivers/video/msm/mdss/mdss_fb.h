@@ -261,6 +261,7 @@ struct msm_fb_data_type {
 	struct list_head proc_list;
 	struct ion_client *fb_ion_client;
 	struct ion_handle *fb_ion_handle;
+	struct dma_buf *fbmem_buf;
 #ifdef CONFIG_HUAWEI_LCD
 	u32 frame_updated;
 #endif
