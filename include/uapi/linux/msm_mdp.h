@@ -563,6 +563,7 @@ struct mdp_scale_data {
  * @PIPE_TYPE_VIG:     VIG pipe.
  * @PIPE_TYPE_RGB:     RGB pipe.
  * @PIPE_TYPE_DMA:     DMA pipe.
+ * @PIPE_TYPE_CURSOR:  CURSOR pipe.
  * @PIPE_TYPE_MAX:     Used to track maximum number of pipe type.
  */
 enum mdp_overlay_pipe_type {
@@ -570,6 +571,7 @@ enum mdp_overlay_pipe_type {
 	PIPE_TYPE_VIG,
 	PIPE_TYPE_RGB,
 	PIPE_TYPE_DMA,
+	PIPE_TYPE_CURSOR,
 	PIPE_TYPE_MAX,
 };
 
