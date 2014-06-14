@@ -358,6 +358,9 @@ static int mem_acc_sel_setup(struct mem_acc_regulator *mem_acc_vreg,
 		mem_select_str = "qcom,acc-sel-l2-bit-pos";
 		mem_select_size_str = "qcom,acc-sel-l2-bit-size";
 		break;
+	default:
+		pr_err("Invalid memory type: %d\n", mem_type);
+		return -EINVAL;
 	}
 
 	mem_acc_vreg->acc_sel_bit_size[mem_type] = MEM_ACC_DEFAULT_SEL_SIZE;
