@@ -715,7 +715,7 @@ static inline struct mdss_mdp_misr_map *mdss_misr_get_map(u32 block_id,
 			 * is required
 			 */
 			if ((mdata->mdp_rev == MDSS_MDP_HW_REV_106) ||
-			(mdata->mdp_rev == MDSS_MDP_HW_REV_108)) {
+				(mdata->mdp_rev == MDSS_MDP_HW_REV_108)) {
 				ctrl_reg += 0x10;
 				value_reg += 0x10;
 			}
