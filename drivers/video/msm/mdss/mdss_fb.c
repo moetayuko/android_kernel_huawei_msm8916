@@ -1159,6 +1159,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 		}
 	#endif
 		timeout = jiffies + HZ/10 ;
+		pr_debug("backlight sent to panel :%d\n", temp);
 		pdata->set_backlight(pdata, temp);
 		if(!time_before(jiffies, timeout)){
 			pr_info("%s: level = %d, set backlight time = %u,offlinecpu = %d,curfreq = %d\n",
