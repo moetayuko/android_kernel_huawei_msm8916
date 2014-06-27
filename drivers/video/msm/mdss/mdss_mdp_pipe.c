@@ -601,7 +601,7 @@ int mdss_mdp_smp_handoff(struct mdss_data_type *mdata)
 			 * here.
 			 */
 			pr_debug("smp mmb %d already assigned to pipe %d (client_id %d)\n"
-				, i, pipe->num, client_id);
+				, i, pipe ? pipe->num : -1, client_id);
 			continue;
 		}
 
@@ -946,7 +946,7 @@ static void mdss_mdp_pipe_free(struct kref *kref)
 	if (pipe && mdss_mdp_panic_signal_supported(mdata, pipe))
 		mdss_mdp_pipe_panic_signal_ctrl(pipe, false);
 
-	if (pipe->play_cnt) {
+	if (pipe && pipe->play_cnt) {
 		mdss_mdp_pipe_fetch_halt(pipe);
 		mdss_mdp_pipe_sspp_term(pipe);
 		mdss_mdp_smp_free(pipe);
@@ -986,7 +986,7 @@ static bool mdss_mdp_check_pipe_in_use(struct mdss_mdp_pipe *pipe)
 			continue;
 
 		mixer = ctl->mixer_left;
-		if (mixer && mixer->rotator_mode)
+		if (!mixer || mixer->rotator_mode)
 			continue;
 
 		mixercfg = mdss_mdp_get_mixercfg(mixer);
@@ -1189,6 +1189,12 @@ int mdss_mdp_pipe_handoff(struct mdss_mdp_pipe *pipe)
 		goto error;
 	}
 	pipe->src_fmt = mdss_mdp_get_format_params(src_fmt);
+	if (!pipe->src_fmt) {
+		pr_err("%s: failed to retrieve format parameters\n",
+			__func__);
+		rc = -EINVAL;
+		goto error;
+	}
 
 	pr_debug("Pipe settings: src.h=%d src.w=%d dst.h=%d dst.w=%d bpp=%d\n"
 		, pipe->src.h, pipe->src.w, pipe->dst.h, pipe->dst.w,
