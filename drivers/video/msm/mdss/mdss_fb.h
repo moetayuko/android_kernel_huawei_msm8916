@@ -266,6 +266,7 @@ struct msm_fb_data_type {
 	u32 frame_updated;
 #endif
 	u32 wait_for_kickoff;
+	u32 thermal_level;
 	bool mdss_fb_split_stored;
 };
 
