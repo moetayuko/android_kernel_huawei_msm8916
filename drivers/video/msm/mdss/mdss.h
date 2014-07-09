@@ -141,6 +141,7 @@ struct mdss_data_type {
 	bool idle_pc_enabled;
 	bool has_dst_split;
 	bool needs_hist_vote;
+	bool has_pixel_ram;
 
 	u32 rotator_ot_limit;
 	u32 mdp_irq_mask;
