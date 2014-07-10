@@ -48,6 +48,7 @@ static struct msm_bus_scale_pdata bw_data = {
 static int num_paths;
 static u32 bus_client;
 
+static unsigned int *freq_ab_table;
 static int set_bw(int new_ib, int new_ab)
 {
 	static int cur_idx, cur_ab, cur_ib;
@@ -82,12 +83,15 @@ static unsigned int find_ab(struct devfreq_dev_profile *p, unsigned long *freq)
 	int i;
 	unsigned long  f;
 
+	if (freq_ab_table == NULL)
+		return 0;
+
 	for (i = 0; i < p->max_state; i++) {
 		f = p->freq_table[i];
 		if (f == *freq)
 			break;
 	}
-	return p->freq_ab_table[i];
+	return freq_ab_table[i];
 }
 
 static void find_freq(struct devfreq_dev_profile *p, unsigned long *freq,
@@ -114,14 +118,15 @@ static void find_freq(struct devfreq_dev_profile *p, unsigned long *freq,
 
 struct devfreq_dev_profile cpubw_profile;
 static long gov_ab;
-static bool vote_ab;
 
 int cpubw_target(struct device *dev, unsigned long *freq, u32 flags)
 {
 	find_freq(&cpubw_profile, freq, flags);
-	if (vote_ab)
-		gov_ab = find_ab(&cpubw_profile, freq);
-	return set_bw(*freq, gov_ab);
+
+	if (!gov_ab)
+		return set_bw(*freq, find_ab(&cpubw_profile, freq));
+	else
+		return set_bw(*freq, gov_ab);
 }
 
 static struct devfreq_governor_data gov_data[] = {
@@ -205,10 +210,10 @@ static int __init cpubw_probe(struct platform_device *pdev)
 		if (!data)
 			return -ENOMEM;
 
-		p->freq_ab_table = devm_kzalloc(dev,
-					len * sizeof(*p->freq_ab_table),
+		freq_ab_table = devm_kzalloc(dev,
+					len * sizeof(*freq_ab_table),
 					GFP_KERNEL);
-		if (!p->freq_ab_table)
+		if (!freq_ab_table)
 			return -ENOMEM;
 
 		ret = of_property_read_u32_array(dev->of_node, PROP_AB_TBL,
@@ -217,8 +222,7 @@ static int __init cpubw_probe(struct platform_device *pdev)
 			return ret;
 
 		for (i = 0; i < len; i++)
-			p->freq_ab_table[i] = data[i];
-		vote_ab = true;
+			freq_ab_table[i] = data[i];
 	}
 
 	bus_client = msm_bus_scale_register_client(&bw_data);
