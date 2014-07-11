@@ -180,6 +180,7 @@ struct mdss_data_type {
 	struct mdss_fudge_factor ib_factor_cmd;
 	struct mdss_fudge_factor clk_factor;
 
+	u32 disable_prefill;
 	u32 *clock_levels;
 	u32 nclk_lvl;
 

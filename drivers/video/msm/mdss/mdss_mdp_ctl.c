@@ -455,6 +455,7 @@ int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 	struct mdss_rect src, dst;
 	bool is_fbc = false;
 	struct mdss_mdp_prefill_params prefill_params;
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	bool calc_smp_size = false;
 
 	if (!pipe || !perf || !pipe->mixer_left)
@@ -573,11 +574,11 @@ int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 		perf->prefill_bytes =
 			mdss_mdp_perf_calc_pipe_prefill_cmd(&prefill_params);
 
-
 exit:
-	pr_debug("mixer=%d pnum=%d clk_rate=%u bw_overlap=%llu prefill=%d\n",
+	pr_debug("mixer=%d pnum=%d clk_rate=%u bw_overlap=%llu prefill=%d %s\n",
 		 mixer->num, pipe->num, perf->mdp_clk_rate, perf->bw_overlap,
-		 perf->prefill_bytes);
+		 perf->prefill_bytes, mdata->disable_prefill ?
+		 "prefill is disabled" : "");
 
 	return 0;
 }
