@@ -380,6 +380,7 @@ struct mdss_dsi_ctrl_pdata {
 
 	int horizontal_idle_cnt;
 	struct panel_horizontal_idle *line_idle;
+	struct mdss_util_intf *mdss_util;
 /*add vars of dispaly color inversion*/
 #ifdef CONFIG_HUAWEI_LCD
 	struct dsi_panel_cmds dot_inversion_cmds;
