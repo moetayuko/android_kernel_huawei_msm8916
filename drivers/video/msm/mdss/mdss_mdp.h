@@ -230,6 +230,7 @@ struct mdss_mdp_ctl {
 					struct mdss_mdp_vsync_handler *);
 	int (*config_fps_fnc) (struct mdss_mdp_ctl *ctl,
 				struct mdss_mdp_ctl *sctl, int new_fps);
+	int (*restore_fnc) (struct mdss_mdp_ctl *ctl);
 
 	struct blocking_notifier_head notifier_head;
 
@@ -892,8 +893,7 @@ int mdss_mdp_wb_get_format(struct msm_fb_data_type *mfd,
 int mdss_mdp_pipe_program_pixel_extn(struct mdss_mdp_pipe *pipe);
 int mdss_mdp_wb_set_secure(struct msm_fb_data_type *mfd, int enable);
 int mdss_mdp_wb_get_secure(struct msm_fb_data_type *mfd, uint8_t *enable);
-void mdss_mdp_ctl_restore(struct mdss_mdp_ctl *ctl);
-int mdss_mdp_footswitch_ctrl_idle_pc(int on, struct device *dev);
+void mdss_mdp_ctl_restore(void);
 int  mdss_mdp_ctl_reset(struct mdss_mdp_ctl *ctl);
 #ifdef CONFIG_HUAWEI_LCD
 void mdss_dsi_status_check_ctl(struct msm_fb_data_type *mfd, int sheduled);
