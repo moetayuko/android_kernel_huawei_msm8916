@@ -725,6 +725,38 @@ static ssize_t mdss_fb_get_src_split_info(struct device *dev,
 	return ret;
 }
 
+static ssize_t mdss_fb_set_doze_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int doze_mode = 0;
+
+	rc = kstrtoint(buf, 10, &doze_mode);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+
+	pr_debug("Always-on mode %s\n", doze_mode ? "enabled" : "disabled");
+	if (mfd->panel_info->type !=  MIPI_CMD_PANEL)
+		pr_err("Always on mode only supported for cmd mode panel\n");
+	else
+		mfd->doze_mode = doze_mode;
+
+	return count;
+}
+
+static ssize_t mdss_fb_get_doze_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", mfd->doze_mode);
+}
+
 static DEVICE_ATTR(msm_fb_type, S_IRUGO, mdss_fb_get_type, NULL);
 static DEVICE_ATTR(msm_fb_split, S_IRUGO | S_IWUSR, mdss_fb_show_split,
 					mdss_fb_store_split);
@@ -737,6 +769,8 @@ static DEVICE_ATTR(msm_fb_src_split_info, S_IRUGO, mdss_fb_get_src_split_info,
 	NULL);
 static DEVICE_ATTR(msm_fb_thermal_level, S_IRUGO | S_IWUSR,
 	mdss_fb_get_thermal_level, mdss_fb_set_thermal_level);
+static DEVICE_ATTR(always_on, S_IRUGO | S_IWUSR | S_IWGRP,
+	mdss_fb_get_doze_mode, mdss_fb_set_doze_mode);
 #ifdef CONFIG_HUAWEI_LCD
 static DEVICE_ATTR(inversion_mode, S_IRUGO|S_IWUSR|S_IWGRP, mdss_show_inversion_mode, mdss_store_inversion_mode);
 static DEVICE_ATTR(panel_status, S_IRUGO, mdss_show_panel_status, NULL);
@@ -752,6 +786,7 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_panel_info.attr,
 	&dev_attr_msm_fb_src_split_info.attr,
 	&dev_attr_msm_fb_thermal_level.attr,
+	&dev_attr_always_on.attr,
 #ifdef CONFIG_HUAWEI_LCD
 	&dev_attr_inversion_mode.attr,
 	&dev_attr_panel_status.attr,
@@ -988,7 +1023,14 @@ static int mdss_fb_suspend_sub(struct msm_fb_data_type *mfd)
 	mfd->suspend.panel_power_state = mfd->panel_power_state;
 
 	if (mfd->op_enable) {
-		ret = mdss_fb_blank_sub(FB_BLANK_POWERDOWN, mfd->fbi,
+		/*
+		 * Ideally, display should have been blanked by now.
+		 * If not, then blank the display based on whether always-on
+		 * feature is enabled or not
+		 */
+		int unblank_flag = mfd->doze_mode ? FB_BLANK_VSYNC_SUSPEND :
+			FB_BLANK_POWERDOWN;
+		ret = mdss_fb_blank_sub(unblank_flag, mfd->fbi,
 				mfd->suspend.op_enable);
 		if (ret) {
 			pr_warn("can't turn off display!\n");
@@ -1160,6 +1202,13 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	int ret = -EINVAL;
 	bool is_bl_changed = (bkl_lvl != mfd->bl_level);
  	unsigned long timeout;
+
+	/* todo: temporary workaround to support doze mode */
+	if ((bkl_lvl == 0) && (mfd->doze_mode)) {
+		pr_debug("keeping backlight on with always-on displays\n");
+		mfd->unset_bl_level = 0;
+		return;
+	}
 
 	if ((((!mdss_fb_is_panel_power_on(mfd) && mfd->dcm_state != DCM_ENTER)
 		|| !mfd->bl_updated) && !IS_CALIB_MODE_BL(mfd)) ||
@@ -1390,16 +1439,21 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 					msecs_to_jiffies(mfd->idle_time));
 		}
 #ifndef CONFIG_HUAWEI_LCD
-		mutex_lock(&mfd->bl_lock);
-		if (!mfd->bl_updated) {
-			mfd->bl_updated = 1;
-			mdss_fb_set_backlight(mfd, mfd->unset_bl_level);
+		/* Reset the backlight only if the panel was off */
+		if (cur_power_state == MDSS_PANEL_POWER_OFF) {
+			mutex_lock(&mfd->bl_lock);
+			if (!mfd->bl_updated) {
+				mfd->bl_updated = 1;
+				mdss_fb_set_backlight(mfd, mfd->unset_bl_level);
+			}
+			mutex_unlock(&mfd->bl_lock);
 		}
-		mutex_unlock(&mfd->bl_lock);
 #endif
 		break;
 
 	case FB_BLANK_VSYNC_SUSPEND:
+		req_power_state = MDSS_PANEL_POWER_DOZE;
+		pr_debug("Doze power mode requested\n");
 	case FB_BLANK_HSYNC_SUSPEND:
 	case FB_BLANK_NORMAL:
 	case FB_BLANK_POWERDOWN:
@@ -1420,10 +1474,12 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 
 			mfd->op_enable = false;
 			mutex_lock(&mfd->bl_lock);
+			if (req_power_state == MDSS_PANEL_POWER_OFF) {
 #ifndef CONFIG_HUAWEI_LCD
-			mdss_fb_set_backlight(mfd, 0);
+				mdss_fb_set_backlight(mfd, 0);
 #endif
-			mfd->bl_updated = 0;
+				mfd->bl_updated = 0;
+			}
 			mfd->panel_power_state = req_power_state;
 			mfd->unset_bl_level = mfd->bl_prev_level;
 			mutex_unlock(&mfd->bl_lock);
@@ -1469,6 +1525,8 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 	if (mfd->op_enable == 0) {
 		if (blank_mode == FB_BLANK_UNBLANK)
 			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_ON;
+		else if (blank_mode == FB_BLANK_VSYNC_SUSPEND)
+			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_DOZE;
 		else
 			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_OFF;
 		return 0;
