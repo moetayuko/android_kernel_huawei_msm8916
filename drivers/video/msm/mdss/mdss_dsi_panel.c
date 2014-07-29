@@ -319,7 +319,7 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 				usleep(pinfo->rst_seq[i] * 1000);
 		}
 	#else
-		if (!pinfo->panel_power_on) {
+		if (!pinfo->cont_splash_enabled) {
 			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 				gpio_set_value((ctrl_pdata->disp_en_gpio), 1);
 
@@ -646,7 +646,6 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 
 static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
-	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_info *pinfo;
 #ifdef CONFIG_HUAWEI_LCD
@@ -660,14 +659,14 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	}
 
 	pinfo = &pdata->panel_info;
-
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
-	mipi  = &pdata->panel_info.mipi;
+
+	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
 	if (pinfo->partial_update_dcs_cmd_by_left) {
 		if (ctrl->ndx != DSI_CTRL_LEFT)
-			return 0;
+			goto end;
 	}
 
 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
@@ -688,6 +687,9 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	pr_info("exit %s\n",__func__);
 #endif
+
+end:
+	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
 	pr_debug("%s:-\n", __func__);
 /* add for timeout print log */
 	pr_info("%s: panel_on_time = %u,offlinecpu = %d,curfreq = %d\n",
@@ -700,7 +702,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 {
-	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_info *pinfo;
 
@@ -710,18 +711,15 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	}
 
 	pinfo = &pdata->panel_info;
-
 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
-	if (pinfo->partial_update_dcs_cmd_by_left) {
-		if (ctrl->ndx != DSI_CTRL_LEFT)
-			return 0;
-	}
-
 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
-	mipi  = &pdata->panel_info.mipi;
+	if (pinfo->partial_update_dcs_cmd_by_left) {
+		if (ctrl->ndx != DSI_CTRL_LEFT)
+			goto end;
+	}
 
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
@@ -729,6 +727,8 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 #ifdef CONFIG_HUAWEI_LCD
 	pr_info("exit %s\n",__func__);
 #endif
+end:
+	pinfo->blank_state = MDSS_PANEL_BLANK_BLANK;
 	pr_debug("%s:-\n", __func__);
 #ifdef CONFIG_LOG_JANK
     pr_jank(JL_KERNEL_LCD_POWER_OFF, "%s#T:%5lu", "JL_KERNEL_LCD_POWER_OFF",getrealtime());

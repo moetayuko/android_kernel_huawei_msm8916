@@ -1237,7 +1237,7 @@ static int msm_dsi_cont_on(struct mdss_panel_data *pdata)
 		mutex_unlock(&ctrl_pdata->mutex);
 		return ret;
 	}
-	pinfo->panel_power_on = 1;
+	pinfo->panel_power_state = MDSS_PANEL_POWER_ON;
 	ret = mdss_dsi_panel_reset(pdata, 1);
 	if (ret) {
 		pr_err("%s: Panel reset failed\n", __func__);

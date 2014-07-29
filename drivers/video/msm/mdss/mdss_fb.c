@@ -199,7 +199,7 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
 		mutex_unlock(&mfd->no_update.lock);
 		to_user = (unsigned int)mfd->no_update.value;
 	} else {
-		if (mfd->panel_power_on) {
+		if (mdss_fb_is_panel_power_on(mfd)) {
 			INIT_COMPLETION(mfd->power_off_comp);
 			ret = wait_for_completion_interruptible_timeout(
 						&mfd->power_off_comp, 1 * HZ);
@@ -425,9 +425,10 @@ static ssize_t mdss_mdp_show_blank_event(struct device *dev,
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
 	int ret;
 
-	pr_debug("fb%d panel_power_on = %d\n", mfd->index, mfd->panel_power_on);
+	pr_debug("fb%d panel_power_state = %d\n", mfd->index,
+		mfd->panel_power_state);
 	ret = scnprintf(buf, PAGE_SIZE, "panel_power_on = %d\n",
-						mfd->panel_power_on);
+						mfd->panel_power_state);
 
 	return ret;
 }
@@ -984,7 +985,7 @@ static int mdss_fb_suspend_sub(struct msm_fb_data_type *mfd)
 	}
 
 	mfd->suspend.op_enable = mfd->op_enable;
-	mfd->suspend.panel_power_on = mfd->panel_power_on;
+	mfd->suspend.panel_power_state = mfd->panel_power_state;
 
 	if (mfd->op_enable) {
 		ret = mdss_fb_blank_sub(FB_BLANK_POWERDOWN, mfd->fbi,
@@ -1021,7 +1022,7 @@ static int mdss_fb_resume_sub(struct msm_fb_data_type *mfd)
 	/* resume state var recover */
 	mfd->op_enable = mfd->suspend.op_enable;
 
-	if (mfd->suspend.panel_power_on) {
+	if (mfd->suspend.panel_power_state == MDSS_PANEL_POWER_ON) {
 		ret = mdss_fb_blank_sub(FB_BLANK_UNBLANK, mfd->fbi,
 					mfd->op_enable);
 		if (ret)
@@ -1160,7 +1161,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	bool is_bl_changed = (bkl_lvl != mfd->bl_level);
  	unsigned long timeout;
 
-	if ((((!mfd->panel_power_on && mfd->dcm_state != DCM_ENTER)
+	if ((((!mdss_fb_is_panel_power_on(mfd) && mfd->dcm_state != DCM_ENTER)
 		|| !mfd->bl_updated) && !IS_CALIB_MODE_BL(mfd)) ||
 		mfd->panel_info->cont_splash_enabled) {
 		mfd->unset_bl_level = bkl_lvl;
@@ -1308,8 +1309,9 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	struct mdss_panel_data *pdata = NULL;
 #endif
 	int ret = 0;
+	int cur_power_state, req_power_state = MDSS_PANEL_POWER_OFF;
 
-	if (!op_enable)
+	if (!mfd || !op_enable)
 		return -EPERM;
 #ifdef CONFIG_HUAWEI_LCD
 	pdata = dev_get_platdata(&mfd->pdev->dev);
@@ -1321,6 +1323,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	if (mfd->dcm_state == DCM_ENTER)
 		return -EPERM;
 
+	cur_power_state = mfd->panel_power_state;
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 		//add log on panel resume and suspend module
@@ -1332,7 +1335,9 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 		if (ret < 0)
 			return ret;
 	}
-		if (!mfd->panel_power_on && mfd->mdp.on_fnc) {
+		pr_debug("unblank called. cur pwr state=%d\n", cur_power_state);
+		if ((cur_power_state != MDSS_PANEL_POWER_ON) &&
+			mfd->mdp.on_fnc) {
 #ifdef CONFIG_HUAWEI_LCD
             /*fix LCD off when turn off wifidisplay*/
 			//set max77819 max current to 20mA
@@ -1351,7 +1356,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 					pdata->set_backlight(pdata, mfd->bl_level);
 				}
 #endif
-				mfd->panel_power_on = true;
+				mfd->panel_power_state = MDSS_PANEL_POWER_ON;
 				mfd->panel_info->panel_dead = false;
 			#ifdef CONFIG_HUAWEI_LCD
 				mfd->panel_info->inversion_mode = COLUMN_INVERSION;
@@ -1399,8 +1404,10 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	case FB_BLANK_NORMAL:
 	case FB_BLANK_POWERDOWN:
 	default:
-		if (mfd->panel_power_on && mfd->mdp.off_fnc) {
-			int curr_pwr_state;
+		pr_debug("blank powerdown called. cur mode=%d, req mode=%d\n",
+			cur_power_state, req_power_state);
+		if (mdss_fb_is_panel_power_on(mfd) && mfd->mdp.off_fnc) {
+			cur_power_state = mfd->panel_power_state;
 
 			mutex_lock(&mfd->update.lock);
 			mfd->update.type = NOTIFY_TYPE_SUSPEND;
@@ -1412,13 +1419,12 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			complete(&mfd->no_update.comp);
 
 			mfd->op_enable = false;
-			curr_pwr_state = mfd->panel_power_on;
 			mutex_lock(&mfd->bl_lock);
 #ifndef CONFIG_HUAWEI_LCD
 			mdss_fb_set_backlight(mfd, 0);
 #endif
-			mfd->panel_power_on = false;
 			mfd->bl_updated = 0;
+			mfd->panel_power_state = req_power_state;
 			mfd->unset_bl_level = mfd->bl_prev_level;
 			mutex_unlock(&mfd->bl_lock);
 
@@ -1428,7 +1434,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 
 			ret = mfd->mdp.off_fnc(mfd);
 			if (ret)
-				mfd->panel_power_on = curr_pwr_state;
+				mfd->panel_power_state = cur_power_state;
 			else
 				mdss_fb_release_fences(mfd);
 			mfd->op_enable = true;
@@ -1462,9 +1468,9 @@ static int mdss_fb_blank(int blank_mode, struct fb_info *info)
 	mdss_fb_pan_idle(mfd);
 	if (mfd->op_enable == 0) {
 		if (blank_mode == FB_BLANK_UNBLANK)
-			mfd->suspend.panel_power_on = true;
+			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_ON;
 		else
-			mfd->suspend.panel_power_on = false;
+			mfd->suspend.panel_power_state = MDSS_PANEL_POWER_OFF;
 		return 0;
 	}
 	pr_debug("mode: %d\n", blank_mode);
@@ -2044,7 +2050,7 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	fbi->pseudo_palette = mdss_fb_pseudo_palette;
 
 	mfd->ref_cnt = 0;
-	mfd->panel_power_on = false;
+	mfd->panel_power_state = MDSS_PANEL_POWER_OFF;
 	mfd->dcm_state = DCM_UNINIT;
 
 	if (mdss_fb_alloc_fbmem(mfd))
@@ -2606,8 +2612,9 @@ static int mdss_fb_pan_display_ex(struct fb_info *info,
 	if (!mfd || (!mfd->op_enable))
 		return -EPERM;
 
-	if ((!mfd->panel_power_on) && !((mfd->dcm_state == DCM_ENTER) &&
-				(mfd->panel.type == MIPI_CMD_PANEL)))
+	if ((!mdss_fb_is_panel_power_on(mfd)) &&
+		!((mfd->dcm_state == DCM_ENTER) &&
+		(mfd->panel.type == MIPI_CMD_PANEL)))
 		return -EPERM;
 
 	if (var->xoffset > (info->var.xres_virtual - info->var.xres))
@@ -2662,8 +2669,9 @@ static int mdss_fb_pan_display_sub(struct fb_var_screeninfo *var,
 	if (!mfd->op_enable)
 		return -EPERM;
 
-	if ((!mfd->panel_power_on) && !((mfd->dcm_state == DCM_ENTER) &&
-				(mfd->panel.type == MIPI_CMD_PANEL)))
+	if ((!mdss_fb_is_panel_power_on(mfd)) &&
+		!((mfd->dcm_state == DCM_ENTER) &&
+		(mfd->panel.type == MIPI_CMD_PANEL)))
 		return -EPERM;
 
 	if (var->xoffset > (info->var.xres_virtual - info->var.xres))
@@ -2989,10 +2997,10 @@ int mdss_fb_dcm(struct msm_fb_data_type *mfd, int req_state)
 	switch (req_state) {
 	case DCM_UNBLANK:
 		if (mfd->dcm_state == DCM_UNINIT &&
-			!mfd->panel_power_on && mfd->mdp.on_fnc) {
+			!mdss_fb_is_panel_power_on(mfd) && mfd->mdp.on_fnc) {
 			ret = mfd->mdp.on_fnc(mfd);
 			if (ret == 0) {
-				mfd->panel_power_on = true;
+				mfd->panel_power_state = MDSS_PANEL_POWER_ON;
 				mfd->dcm_state = DCM_UNBLANK;
 			}
 		}
@@ -3003,24 +3011,24 @@ int mdss_fb_dcm(struct msm_fb_data_type *mfd, int req_state)
 			 * Keep unblank path available for only
 			 * DCM operation
 			 */
-			mfd->panel_power_on = false;
+			mfd->panel_power_state = MDSS_PANEL_POWER_OFF;
 			mfd->dcm_state = DCM_ENTER;
 		}
 		break;
 	case DCM_EXIT:
 		if (mfd->dcm_state == DCM_ENTER) {
 			/* Release the unblank path for exit */
-			mfd->panel_power_on = true;
+			mfd->panel_power_state = MDSS_PANEL_POWER_ON;
 			mfd->dcm_state = DCM_EXIT;
 		}
 		break;
 	case DCM_BLANK:
 		if ((mfd->dcm_state == DCM_EXIT ||
 			mfd->dcm_state == DCM_UNBLANK) &&
-			mfd->panel_power_on && mfd->mdp.off_fnc) {
+			mdss_fb_is_panel_power_on(mfd) && mfd->mdp.off_fnc) {
 			ret = mfd->mdp.off_fnc(mfd);
 			if (ret == 0) {
-				mfd->panel_power_on = false;
+				mfd->panel_power_state = MDSS_PANEL_POWER_OFF;
 				mfd->dcm_state = DCM_UNINIT;
 			}
 		}
@@ -3418,7 +3426,7 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		if (ret)
 			goto exit;
 
-		if ((!mfd->op_enable) || (!mfd->panel_power_on)) {
+		if ((!mfd->op_enable) || (!mdss_fb_is_panel_power_on(mfd))) {
 			ret = -EPERM;
 			goto exit;
 		}
