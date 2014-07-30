@@ -1883,7 +1883,7 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd)
 	u32 offset;
 	int bpp, ret;
 
-	if (!mfd)
+	if (!mfd || !mfd->mdp.private1)
 		return;
 
 	mdata = mfd_to_mdata(mfd);
@@ -3488,6 +3488,8 @@ static int mdss_mdp_overlay_handoff(struct msm_fb_data_type *mfd)
 			goto error;
 		}
 		mdp5_data->ctl = ctl;
+	} else {
+		ctl = mdp5_data->ctl;
 	}
 
 	/*
