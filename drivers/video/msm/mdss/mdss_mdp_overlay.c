@@ -1195,11 +1195,7 @@ int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 
 	pr_debug("starting fb%d overlay\n", mfd->index);
 
-	rc = pm_runtime_get_sync(&mfd->pdev->dev);
-	if (IS_ERR_VALUE(rc)) {
-		pr_err("unable to resume with pm_runtime_get_sync rc=%d\n", rc);
-		goto end;
-	}
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 
 	/*
 	 * If idle pc feature is not enabled, then get a reference to the
@@ -1224,11 +1220,10 @@ int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 	 */
 	if (!is_mdss_iommu_attached()) {
 		if (!mfd->panel_info->cont_splash_enabled) {
-			ret = mdss_iommu_ctrl(1);
-			if (IS_ERR_VALUE(ret)) {
-				pr_err("iommu attach failed ret=%d\n", ret);
-				pm_runtime_put(&mfd->pdev->dev);
-				return ret;
+			rc = mdss_iommu_ctrl(1);
+			if (IS_ERR_VALUE(rc)) {
+				pr_err("iommu attach failed rc=%d\n", rc);
+				goto end;
 			}
 			mdss_hw_init(mdss_res);
 			mdss_iommu_ctrl(0);
@@ -1260,6 +1255,7 @@ ctl_error:
 	mdp5_data->ctl = NULL;
 	pm_runtime_put(&mfd->pdev->dev);
 end:
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
 	return rc;
 }
 
