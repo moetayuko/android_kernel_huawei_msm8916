@@ -122,6 +122,18 @@ enum mdp_wfd_blk_type {
 	MDSS_MDP_WFD_DEDICATED,
 };
 
+enum mdss_mdp_reg_bus_cfg {
+	REG_CLK_CFG_OFF,
+	REG_CLK_CFG_LOW,
+	REG_CLK_CFG_HIGH,
+};
+
+enum mdss_mdp_panic_signal_type {
+	MDSS_MDP_PANIC_NONE,
+	MDSS_MDP_PANIC_COMMON_REG_CFG,
+	MDSS_MDP_PANIC_PER_PIPE_CFG,
+};
+
 /**
  * enum mdp_commit_stage_type - Indicate different commit stages
  *
@@ -133,12 +145,6 @@ enum mdp_wfd_blk_type {
 enum mdp_commit_stage_type {
 	MDP_COMMIT_STAGE_SETUP_DONE,
 	MDP_COMMIT_STAGE_READY_FOR_KICKOFF,
-};
-
-enum mdss_mdp_reg_bus_cfg {
-	REG_CLK_CFG_OFF,
-	REG_CLK_CFG_LOW,
-	REG_CLK_CFG_HIGH,
 };
 
 struct mdss_mdp_ctl;
@@ -612,15 +618,24 @@ static inline struct clk *mdss_mdp_get_clk(u32 clk_idx)
 	return NULL;
 }
 
-static inline int mdss_mdp_panic_signal_supported(
+static inline int mdss_mdp_panic_signal_support_mode(
 	struct mdss_data_type *mdata, struct mdss_mdp_pipe *pipe)
 {
-	return ((IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
+	uint32_t signal_mode = MDSS_MDP_PANIC_NONE;
+
+	if (pipe && pipe->mixer_left &&
+		pipe->mixer_left->type != MDSS_MDP_MIXER_TYPE_INTF) {
+		if (IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
 					MDSS_MDP_HW_REV_105) ||
-		IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
-					MDSS_MDP_HW_REV_108)) &&
-		pipe->mixer_left &&
-		pipe->mixer_left->type == MDSS_MDP_MIXER_TYPE_INTF);
+		    IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
+					MDSS_MDP_HW_REV_108))
+			signal_mode = MDSS_MDP_PANIC_COMMON_REG_CFG;
+		else if (IS_MDSS_MAJOR_MINOR_SAME(mdata->mdp_rev,
+					MDSS_MDP_HW_REV_107))
+			signal_mode = MDSS_MDP_PANIC_PER_PIPE_CFG;
+	}
+
+	return signal_mode;
 }
 
 static inline void mdss_update_sd_client(struct mdss_data_type *mdata,
