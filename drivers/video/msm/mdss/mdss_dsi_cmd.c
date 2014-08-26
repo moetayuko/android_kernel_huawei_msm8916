@@ -654,7 +654,7 @@ int mdss_dsi_cmdlist_put(struct mdss_dsi_ctrl_pdata *ctrl,
 {
 	struct dcs_cmd_req *req;
 	struct dcs_cmd_list *clist;
-	int ret = -EINVAL;
+	int ret = 0;
 
 /*avoid running test read and esd read conflict and device crash */
 #ifdef CONFIG_HUAWEI_LCD
