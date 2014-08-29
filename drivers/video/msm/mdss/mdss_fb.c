@@ -873,6 +873,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	mfd->bl_level = 0;
 	mfd->bl_scale = 1024;
 	mfd->bl_min_lvl = 30;
+	mfd->ad_bl_level = 0;
 	mfd->fb_imgType = MDP_RGBA_8888;
 
 	mfd->pdev = pdev;
@@ -1209,10 +1210,10 @@ extern int mdss_ready_flag;
 void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 {
 	struct mdss_panel_data *pdata;
-	int (*update_ad_input)(struct msm_fb_data_type *mfd);
-	u32 temp = bkl_lvl;
+	u32 temp = bkl_lvl, ad_bl;
 	int ret = -EINVAL;
 	bool is_bl_changed = (bkl_lvl != mfd->bl_level);
+	bool bl_notify_needed = false;
  	unsigned long timeout;
 
 	/* todo: temporary workaround to support doze mode */
@@ -1235,12 +1236,18 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	wait_event_interruptible_timeout(pdata->waitq,mdss_ready_flag,msecs_to_jiffies(1000));
 
 	if ((pdata) && (pdata->set_backlight)) {
-		if (mfd->mdp.ad_attenuate_bl) {
-			ret = (*mfd->mdp.ad_attenuate_bl)(bkl_lvl, &temp, mfd);
-			if (ret)
-				pr_err("Failed to attenuate BL\n");
+		if (mfd->mdp.ad_calc_bl) {
+			if (mfd->ad_bl_level == 0)
+				mfd->ad_bl_level = temp;
+			ad_bl = mfd->ad_bl_level;
+			ret = (*mfd->mdp.ad_calc_bl)(mfd, temp, &temp, &ad_bl);
+			if ((!ret) && (mfd->ad_bl_level != ad_bl) &&
+				mfd->mdp.ad_invalidate_input) {
+				mfd->ad_bl_level = ad_bl;
+				(*mfd->mdp.ad_invalidate_input)(mfd);
+				bl_notify_needed = true;
+			}
 		}
-
 		if (!IS_CALIB_MODE_BL(mfd))
 			mdss_fb_scale_bl(mfd, &temp);
 		/*
@@ -1253,54 +1260,23 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 		 */
 		if (mfd->bl_level_scaled == temp) {
 			mfd->bl_level = bkl_lvl;
-			return;
-		}
-	/*cancle the esd esd delay work before set backlight */
-	#ifdef CONFIG_HUAWEI_LCD
-		mdss_dsi_status_check_ctl(mfd,false);
-	#endif
-        /*add backlight log when phone resume*/
-	#ifdef CONFIG_HUAWEI_LCD
-/* remove APR web LCD report log information  */
-		if ( mfd->bl_level_scaled == 0 )
-		{
-			pr_info("%s: set backlight to %d\n",__func__,temp);
-
-		}
-	#endif
-		timeout = jiffies + HZ/10 ;
-		pr_debug("backlight sent to panel :%d\n", temp);
-		pdata->set_backlight(pdata, temp);
-		if(!time_before(jiffies, timeout)){
-			pr_info("%s: level = %d, set backlight time = %u,offlinecpu = %d,curfreq = %d\n",
-			__func__,temp,jiffies_to_msecs(jiffies-timeout+HZ/10),get_offline_cpu(),cpufreq_get(0));
-		}
-		/* avoid APR web LCD report log mistakenly*/
-#ifdef CONFIG_LOG_JANK
-		if(temp ==0)
-		{
-           LOG_JANK_V(JL_HWC_LCD_BACKLIGHT_OFF, "%s#T:%5lu", "JL_HWC_LCD_BACKLIGHT_OFF",getrealtime());
-		}
-		else if ((mfd->bl_level_scaled == 0)&&(temp !=0))
-        {
-            pr_jank(JL_KERNEL_LCD_RESUME,"%s,%d#T:%5lu", "JL_KERNEL_LCD_RESUME",temp,getrealtime());
-        }
+		} else {
+			pr_debug("backlight sent to panel :%d\n", temp);
+/*cancle the esd esd delay work before set backlight */
+#ifdef CONFIG_HUAWEI_LCD
+			mdss_dsi_status_check_ctl(mfd,false);
 #endif
-	/*schedule esd delay work again*/
-	#ifdef CONFIG_HUAWEI_LCD
-		mdss_dsi_status_check_ctl(mfd,true);
-	#endif
-		mfd->bl_level = bkl_lvl;
-		mfd->bl_level_scaled = temp;
-
-		if (mfd->mdp.update_ad_input && is_bl_changed) {
-			update_ad_input = mfd->mdp.update_ad_input;
-			mutex_unlock(&mfd->bl_lock);
-			/* Will trigger ad_setup which will grab bl_lock */
-			update_ad_input(mfd);
-			mutex_lock(&mfd->bl_lock);
+			pdata->set_backlight(pdata, temp);
+/*schedule esd delay work again*/
+#ifdef CONFIG_HUAWEI_LCD
+			mdss_dsi_status_check_ctl(mfd,true);
+#endif
+			mfd->bl_level = bkl_lvl;
+			mfd->bl_level_scaled = temp;
+			bl_notify_needed = true;
 		}
-		mdss_fb_bl_update_notify(mfd);
+		if (bl_notify_needed)
+			mdss_fb_bl_update_notify(mfd);
 	}
 }
 
@@ -1309,6 +1285,7 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 	struct mdss_panel_data *pdata;
 	int ret = 0;
 	u32 temp;
+	u32 ad_bl;
 
 	if (!mfd->unset_bl_level)
 		return;
@@ -1318,15 +1295,21 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 		if ((pdata) && (pdata->set_backlight)) {
 			mfd->bl_level = mfd->unset_bl_level;
 			temp = mfd->bl_level;
-			if (mfd->mdp.ad_attenuate_bl) {
-				ret = (*mfd->mdp.ad_attenuate_bl)(temp,
-						&temp, mfd);
-				if (ret)
-					pr_err("Failed to attenuate BL\n");
+			if (mfd->mdp.ad_calc_bl) {
+				if (mfd->ad_bl_level == 0)
+					mfd->ad_bl_level = temp;
+				ad_bl = mfd->ad_bl_level;
+				ret = (*mfd->mdp.ad_calc_bl)(mfd, temp, &temp,
+					&ad_bl);
+				if ((!ret) && (mfd->ad_bl_level != ad_bl) &&
+						mfd->mdp.ad_invalidate_input) {
+					mfd->ad_bl_level = ad_bl;
+					(*mfd->mdp.ad_invalidate_input)(mfd);
+				}
 			}
-
 			pdata->set_backlight(pdata, temp);
 			mfd->bl_updated = 1;
+			mdss_fb_bl_update_notify(mfd);
 		}
 	}
 	mutex_unlock(&mfd->bl_lock);
