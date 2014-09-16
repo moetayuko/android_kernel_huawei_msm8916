@@ -1439,7 +1439,7 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	ctrl->dma_size = ALIGN(tp->len, SZ_4K);
 
 
-	if (is_mdss_iommu_attached()) {
+	if (ctrl->mdss_util->iommu_attached()) {
 		int ret = msm_iommu_map_contig_buffer(tp->dmap,
 				mdss_get_iommu_domain(domain), 0,
 				ctrl->dma_size, SZ_4K, 0, &(ctrl->dma_addr));
@@ -1513,9 +1513,9 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	if (mctrl && mctrl->dma_addr) {
 #ifdef CONFIG_HUAWEI_LCD
 		//unmap it when it have been maped at front
-		if (is_mdss_iommu_attached() && iommu_attached) {
+		if (ctrl->mdss_util->iommu_attached() && iommu_attached) {
 #else
-		if (is_mdss_iommu_attached()) {
+		if (ctrl->mdss_util->iommu_attached()) {
 #endif
 			msm_iommu_unmap_contig_buffer(mctrl->dma_addr,
 			mdss_get_iommu_domain(domain), 0, mctrl->dma_size);
@@ -1524,7 +1524,7 @@ static int mdss_dsi_cmd_dma_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 		mctrl->dma_size = 0;
 	}
 
-	if (is_mdss_iommu_attached()) {
+	if (ctrl->mdss_util->iommu_attached()) {
 		msm_iommu_unmap_contig_buffer(ctrl->dma_addr,
 			mdss_get_iommu_domain(domain), 0, ctrl->dma_size);
 	}
@@ -1812,17 +1812,23 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 	 * also, axi bus bandwidth need since dsi controller will
 	 * fetch dcs commands from axi bus
 	 */
-	mdss_bus_bandwidth_ctrl(1);
-	mdss_bus_scale_set_quota(MDSS_HW_DSI0, SZ_1M, 0, SZ_1M);
+	if (ctrl->mdss_util->bus_bandwidth_ctrl)
+		ctrl->mdss_util->bus_bandwidth_ctrl(1);
+
+	if (ctrl->mdss_util->bus_scale_set_quota)
+		ctrl->mdss_util->bus_scale_set_quota(MDSS_HW_DSI0,
+							SZ_1M, 0, SZ_1M);
 
 	pr_debug("%s:  from_mdp=%d pid=%d\n", __func__, from_mdp, current->pid);
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 1);
 
-	rc = mdss_iommu_ctrl(1);
-	if (IS_ERR_VALUE(rc)) {
-		pr_err("IOMMU attach failed\n");
-		mutex_unlock(&ctrl->cmd_mutex);
-		return rc;
+	if (ctrl->mdss_util->iommu_ctrl) {
+		rc = ctrl->mdss_util->iommu_ctrl(1);
+		if (IS_ERR_VALUE(rc)) {
+			pr_err("IOMMU attach failed\n");
+			mutex_unlock(&ctrl->cmd_mutex);
+			return rc;
+		}
 	}
 /* switch hs mode for read cmd*/
 	if (req->flags & CMD_REQ_HS_MODE)
@@ -1834,10 +1840,15 @@ int mdss_dsi_cmdlist_commit(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp)
 /* switch lp mode for read cmd*/
 	if (req->flags & CMD_REQ_HS_MODE)
 		mdss_dsi_set_tx_power_mode(1, &ctrl->panel_data);
-	mdss_iommu_ctrl(0);
+
+	if (ctrl->mdss_util->iommu_ctrl)
+		ctrl->mdss_util->iommu_ctrl(0);
+
 	mdss_dsi_clk_ctrl(ctrl, DSI_ALL_CLKS, 0);
-	mdss_bus_scale_set_quota(MDSS_HW_DSI0, 0, 0, 0);
-	mdss_bus_bandwidth_ctrl(0);
+	if (ctrl->mdss_util->bus_scale_set_quota)
+		ctrl->mdss_util->bus_scale_set_quota(MDSS_HW_DSI0, 0, 0, 0);
+	if (ctrl->mdss_util->bus_bandwidth_ctrl)
+		ctrl->mdss_util->bus_bandwidth_ctrl(0);
 need_lock:
 
 	MDSS_XLOG(ctrl->ndx, from_mdp, ctrl->mdp_busy, current->pid,
