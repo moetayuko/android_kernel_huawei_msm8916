@@ -542,9 +542,11 @@ int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 	else
 		perf->mdp_clk_rate = rate;
 
-	if (mixer->ctl->intf_num == MDSS_MDP_NO_INTF) {
+	if (mixer->ctl->intf_num == MDSS_MDP_NO_INTF ||
+		mdata->disable_prefill ||
+		(pipe->flags & MDP_SOLID_FILL)) {
 		perf->prefill_bytes = 0;
-		return 0;
+		goto exit;
 	}
 
 	calc_smp_size = (flags & PERF_CALC_PIPE_CALC_SMP_SIZE) ? true : false;
@@ -576,6 +578,7 @@ int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 		perf->prefill_bytes =
 			mdss_mdp_perf_calc_pipe_prefill_cmd(&prefill_params);
 
+exit:
 	pr_debug("mixer=%d pnum=%d clk_rate=%u bw_overlap=%llu prefill=%d %s\n",
 		 mixer->num, pipe->num, perf->mdp_clk_rate, perf->bw_overlap,
 		 perf->prefill_bytes, mdata->disable_prefill ?
