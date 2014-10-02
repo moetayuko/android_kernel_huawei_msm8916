@@ -23,7 +23,7 @@
 #include "mdss_mdp.h"
 #include "mdss_panel.h"
 #include "mdss_debug.h"
-#include "mdss_mdp_trace.h"
+#include <trace/mdss_mdp_trace.h>
 
 /* add log on panel resume and suspend module */
 #include <linux/hw_lcd_common.h>
