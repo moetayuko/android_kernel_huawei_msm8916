@@ -48,3 +48,5 @@ obj-$(CONFIG_COMPAT) += mdss_compat_utils.o
 
 
 obj-$(CONFIG_HUAWEI_LCD) += hw_lcd_debug.o
+
+obj-$(CONFIG_FB_MSM_MDSS_KCAL_CTRL) += mdss_mdp_kcal_ctrl.o
