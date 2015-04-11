@@ -1441,6 +1441,11 @@ static int venus_hfi_suspend(void *dev)
 	if (device->power_enabled) {
 		rc = flush_delayed_work(&venus_hfi_pm_work);
 		dprintk(VIDC_INFO, "%s flush delayed work %d\n", __func__, rc);
+		if (rc == 0) {
+			queue_delayed_work(device->venus_pm_workq, &venus_hfi_pm_work, 0);
+			rc = flush_delayed_work(&venus_hfi_pm_work);
+			dprintk(VIDC_INFO, "%s again flush delayed work %d\n", __func__, rc);
+		}
 	}
 	return 0;
 }
@@ -2896,7 +2901,7 @@ static void venus_hfi_pm_hndlr(struct work_struct *work)
 	struct venus_hfi_device *device = list_first_entry(
 			&hal_ctxt.dev_head, struct venus_hfi_device, list);
 	mutex_lock(&device->clk_pwr_lock);
-	if (device->clk_state == ENABLED_PREPARED || !device->power_enabled) {
+	if (!device->power_enabled) {
 		dprintk(VIDC_DBG,
 				"Clocks status: %d, Power status: %d, ignore power off\n",
 				device->clk_state, device->power_enabled);

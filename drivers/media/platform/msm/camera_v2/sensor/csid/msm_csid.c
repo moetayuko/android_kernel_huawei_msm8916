@@ -47,6 +47,11 @@
 #else
 #define CDBG(fmt, args...) do { } while (0)
 #endif
+
+#ifdef CONFIG_HUAWEI_KERNEL
+extern bool huawei_cam_is_factory_mode(void);
+#endif
+
 static struct msm_cam_clk_info csid_clk_info[CSID_NUM_CLK_MAX];
 static struct msm_cam_clk_info csid_clk_src_info[CSID_NUM_CLK_MAX];
 
@@ -187,8 +192,28 @@ static irqreturn_t msm_csid_irq(int irq_num, void *data)
 	}
 	irq = msm_camera_io_r(csid_dev->base +
 		csid_dev->ctrl_reg->csid_reg.csid_irq_status_addr);
+#ifdef CONFIG_HUAWEI_KERNEL
+	if(huawei_cam_is_factory_mode())
+	{
+		if(csid_dev->pdev)
+		{
+			pr_err("%s CSID%d_IRQ_STATUS_ADDR = 0x%x\n",
+				   __func__, csid_dev->pdev->id, irq);
+		}
+		else
+		{
+			pr_err("%s:%d csid_dev->pdev NULL\n", __func__, __LINE__);
+		}
+	}
+	else
+	{
+		CDBG("%s CSID%d_IRQ_STATUS_ADDR = 0x%x\n",
+			 __func__, csid_dev->pdev->id, irq);
+	}
+#else
 	CDBG("%s CSID%d_IRQ_STATUS_ADDR = 0x%x\n",
 		 __func__, csid_dev->pdev->id, irq);
+#endif
 	if (irq & (0x1 <<
 		csid_dev->ctrl_reg->csid_reg.csid_rst_done_irq_bitshift))
 		complete(&csid_dev->reset_complete);
@@ -202,7 +227,18 @@ static int msm_csid_irq_routine(struct v4l2_subdev *sd, u32 status,
 {
 	struct csid_device *csid_dev = v4l2_get_subdevdata(sd);
 	irqreturn_t ret;
+#ifdef CONFIG_HUAWEI_KERNEL
+	if(huawei_cam_is_factory_mode())
+	{
+		pr_err("%s E\n", __func__);
+	}
+	else
+	{
+		CDBG("%s E\n", __func__);
+	}
+#else
 	CDBG("%s E\n", __func__);
+#endif
 	ret = msm_csid_irq(csid_dev->irq->start, csid_dev);
 	*handled = TRUE;
 	return 0;
@@ -410,6 +446,30 @@ static int msm_csid_release(struct csid_device *csid_dev)
 	return 0;
 }
 
+static int read_times = 0;
+#define HW_PRINT_PACKET_NUM_TIME 5 //print 5 times
+#define HW_READ_PACKET_NUM_TIME 200 //200ms
+#define HW_FIRST_DELAY_TIME 500 //500ms
+static void read_packet_work_handler(struct work_struct *work)
+{
+	struct csid_device *csid_dev = container_of(work, struct csid_device,packet_num_work.work);
+	uint32_t value = 0;
+	if(!csid_dev || !csid_dev->base)
+	{
+		pr_err("%s:%d\n",__func__,__LINE__);
+		return;
+	}
+
+	value = msm_camera_io_r(csid_dev->base + csid_dev->ctrl_reg->csid_reg.csid_stats_total_pkts_rcvd_addr);
+
+	pr_err("%s: csid total packet[%d] = %u\n",__func__,read_times,value);
+
+	read_times--;
+	if(read_times > 0) {
+		schedule_delayed_work(&csid_dev->packet_num_work, msecs_to_jiffies(HW_READ_PACKET_NUM_TIME));
+	}
+}
+
 static int32_t msm_csid_cmd(struct csid_device *csid_dev, void *arg)
 {
 	int rc = 0;
@@ -424,8 +484,10 @@ static int32_t msm_csid_cmd(struct csid_device *csid_dev, void *arg)
 	switch (cdata->cfgtype) {
 	case CSID_INIT:
 		rc = msm_csid_init(csid_dev, &cdata->cfg.csid_version);
-		CDBG("%s csid version 0x%x\n", __func__,
-			cdata->cfg.csid_version);
+		read_times = HW_PRINT_PACKET_NUM_TIME;
+		schedule_delayed_work(&csid_dev->packet_num_work, msecs_to_jiffies(HW_FIRST_DELAY_TIME));
+		pr_err("%s CSID_INIT csid version %x, mem_start=%x\n", __func__,cdata->cfg.csid_version,
+			csid_dev->mem->start);
 		break;
 	case CSID_CFG: {
 		struct msm_camera_csid_params csid_params;
@@ -473,7 +535,10 @@ static int32_t msm_csid_cmd(struct csid_device *csid_dev, void *arg)
 		break;
 	}
 	case CSID_RELEASE:
+		read_times = 0;
+		cancel_delayed_work_sync(&csid_dev->packet_num_work);
 		rc = msm_csid_release(csid_dev);
+		pr_err("%s: CSID_RELEASE\n",__func__);
 		break;
 	default:
 		pr_err("%s: %d failed\n", __func__, __LINE__);
@@ -752,6 +817,8 @@ static int csid_probe(struct platform_device *pdev)
 		pr_err("%s Error registering irq ", __func__);
 		goto csid_no_resource;
 	}
+	/*init work handler*/
+	INIT_DELAYED_WORK(&new_csid_dev->packet_num_work, read_packet_work_handler);
 
 	if (of_device_is_compatible(new_csid_dev->pdev->dev.of_node,
 		"qcom,csid-v2.0")) {

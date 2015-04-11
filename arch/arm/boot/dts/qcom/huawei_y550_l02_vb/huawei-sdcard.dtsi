@@ -1,0 +1,4 @@
+&sdhc_2 {
+        /*add for changing the order of vdd and vddio*/
+        huawei,power-off-no-card;
+};

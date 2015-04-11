@@ -47,6 +47,21 @@
 #include "sd_ops.h"
 #include "sdio_ops.h"
 
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+#include <linux/mmc/dsm_sdcard.h>
+#endif
+
+#ifdef CONFIG_HW_FEATURE_STORAGE_DIAGNOSE_LOG
+#include <linux/store_log.h>
+extern u64 device_index;
+#endif
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/dsm_emmc.h>
+#endif
+
+#ifdef CONFIG_HUAWEI_KERNEL
+#include <linux/debugfs.h>
+#endif
 /* If the device is not responding */
 #define MMC_CORE_TIMEOUT_MS	(10 * 60 * 1000) /* 10 minute timeout */
 
@@ -113,6 +128,50 @@ MODULE_PARM_DESC(
 			stats.bkops_level[level-1]++;			\
 		spin_unlock(&stats.lock);				\
 	} while (0);
+
+#ifdef CONFIG_HUAWEI_KERNEL
+
+static struct dentry *dentry_mmclog;
+u64 rwlog_enable_flag = 0;   /* 0 : Disable , 1: Enable */
+u64 rwlog_index = 0;     /* device index, 0: for emmc */
+int mmc_debug_mask = 0;
+
+static int rwlog_enable_set(void *data, u64 val)
+{
+    rwlog_enable_flag = val;
+    return 0;
+}
+static int rwlog_enable_get(void *data, u64 *val)
+{
+    *val = rwlog_enable_flag;
+    return 0;
+}
+static int rwlog_index_set(void *data, u64 val)
+{
+    rwlog_index = val;
+    return 0;
+}
+static int rwlog_index_get(void *data, u64 *val)
+{
+    *val = rwlog_index;
+    return 0;
+}
+static int debug_mask_set(void *data, u64 val)
+{
+    mmc_debug_mask = (int)val;
+    return 0;
+}
+static int debug_mask_get(void *data, u64 *val)
+{
+    *val = (u64)mmc_debug_mask;
+    return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(rwlog_enable_fops,rwlog_enable_get, rwlog_enable_set, "%llu\n");
+DEFINE_SIMPLE_ATTRIBUTE(rwlog_index_fops,rwlog_index_get, rwlog_index_set, "%llu\n");
+DEFINE_SIMPLE_ATTRIBUTE(debug_mask_fops,debug_mask_get, debug_mask_set, "%llu\n");
+
+#endif
 
 /*
  * Internal function. Schedule delayed work in the MMC work queue.
@@ -318,6 +377,24 @@ mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 			 mmc_hostname(host), mrq->stop->opcode,
 			 mrq->stop->arg, mrq->stop->flags);
 	}
+
+#ifdef CONFIG_HUAWEI_KERNEL
+    if(1 == rwlog_enable_flag)
+    {
+        if(mrq->cmd->opcode == MMC_WRITE_MULTIPLE_BLOCK
+            || mrq->cmd->opcode == MMC_WRITE_BLOCK
+            || mrq->cmd->opcode == MMC_READ_MULTIPLE_BLOCK
+            || mrq->cmd->opcode == MMC_READ_SINGLE_BLOCK)
+        {
+            /* only mmc rw log is output */
+            if(rwlog_index == host->index)
+            {
+                printk("%s:cmd=%d,mrq->data.blocks=%d,index=%d,arg=%x\n",__func__,
+                (int)mrq->cmd->opcode, mrq->data->blocks, host->index, mrq->cmd->arg);
+            }
+        }
+    }
+#endif
 
 	WARN_ON(!host->claimed);
 
@@ -2085,7 +2162,17 @@ void mmc_power_up(struct mmc_host *host)
 	 * This delay should be sufficient to allow the power supply
 	 * to reach the minimum voltage.
 	 */
+	/*For sdcard we increase delay to 150ms to give rpm more time to operate.*/
+#ifdef CONFIG_HUAWEI_KERNEL
+	if(!strcmp(mmc_hostname(host), "mmc1")) {
+		mmc_delay(150);
+	}
+	else {
+		mmc_delay(10);
+	}
+#else
 	mmc_delay(10);
+#endif
 
 	host->ios.clock = host->f_init;
 
@@ -2108,6 +2195,18 @@ void mmc_power_off(struct mmc_host *host)
 {
 	if (host->ios.power_mode == MMC_POWER_OFF)
 		return;
+
+#ifdef CONFIG_HUAWEI_KERNEL
+    /*because no sdcard plug in,we need power off the ldo
+    *but is_always_on==1, so that the state of sdcard's power will not power off.
+    *above,add check sdcard's state of and set is_always_on=0 when there's no sdcard,
+    *ensure sdcard can power off in this case.
+    */
+    if(host->ops->get_cd)
+    {
+        host->ops->get_cd(host);
+    }
+#endif
 
 	mmc_host_clk_hold(host);
 
@@ -2530,8 +2629,19 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 		/* Do not retry else we can't see errors */
 		err = mmc_wait_for_cmd(card->host, &cmd, 0);
 		if (err || (cmd.resp[0] & 0xFDF92000)) {
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+			if(card->host->index == device_index){
+				DSM_EMMC_LOG(card, DSM_EMMC_ERASE_ERR,
+					"%s:error %d requesting status %#x\n", __FUNCTION__,
+					err, cmd.resp[0]);
+			}
+			else
+				pr_err("error %d requesting status %#x\n",
+					err, cmd.resp[0]);
+#else
 			pr_err("error %d requesting status %#x\n",
 				err, cmd.resp[0]);
+#endif
 			err = -EIO;
 			goto out;
 		}
@@ -3283,6 +3393,18 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 int _mmc_detect_card_removed(struct mmc_host *host)
 {
 	int ret;
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+	int i;
+
+	if(!strcmp(mmc_hostname(host), "mmc1"))
+	{
+		for(i=0; i< DSM_SDCARD_CMD_MAX; i++)
+		{
+			dsm_sdcard_cmd_logs[i].value = 0;
+		}
+	}
+#endif
+
 
 	if ((host->caps & MMC_CAP_NONREMOVABLE) || !host->bus_ops->alive)
 		return 0;
@@ -3427,7 +3549,12 @@ void mmc_rescan(struct work_struct *work)
 		wake_lock_timeout(&host->detect_wake_lock, HZ / 2);
 
 	if (host->caps & MMC_CAP_NEEDS_POLL)
+#ifdef CONFIG_HUAWEI_KERNEL
+		/*set the time of polling to three second.*/
+		mmc_schedule_delayed_work(&host->detect, (3*HZ));
+#else
 		mmc_schedule_delayed_work(&host->detect, HZ);
+#endif
 }
 
 void mmc_start_host(struct mmc_host *host)
@@ -3989,6 +4116,18 @@ static int __init mmc_init(void)
 	if (ret)
 		goto unregister_host_class;
 
+#ifdef CONFIG_HUAWEI_KERNEL
+    dentry_mmclog = debugfs_create_dir("hw_mmclog", NULL);
+    if(dentry_mmclog )
+    {
+        debugfs_create_file("rwlog_enable", S_IFREG|S_IRWXU|S_IRGRP|S_IROTH,
+            dentry_mmclog, NULL, &rwlog_enable_fops);
+        debugfs_create_file("rwlog_index", S_IFREG|S_IRWXU|S_IRGRP|S_IROTH,
+            dentry_mmclog, NULL, &rwlog_index_fops);
+        debugfs_create_file("debug_mask", S_IFREG|S_IRWXU|S_IRGRP|S_IROTH,
+            dentry_mmclog, NULL, &debug_mask_fops);
+    }
+#endif
 	return 0;
 
 unregister_host_class:

@@ -675,7 +675,6 @@ config SWP_EMULATE
 	  perform SWP operations to uncached memory to deadlock.
 
 	  If unsure, say Y.
-
 config FORCE_INSTRUCTION_ALIGNMENT
 	bool "Force instructions address alignment"
 	depends on CPU_V7 && ALIGNMENT_TRAP
@@ -690,7 +689,6 @@ config FORCE_INSTRUCTION_ALIGNMENT
 	  is forced aligned with this config.
 
 	  If unsure, say Y.
-
 config CPU_BIG_ENDIAN
 	bool "Build big-endian kernel"
 	depends on ARCH_SUPPORTS_BIG_ENDIAN

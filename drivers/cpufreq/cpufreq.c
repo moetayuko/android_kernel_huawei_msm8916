@@ -42,6 +42,11 @@ static DEFINE_RWLOCK(cpufreq_driver_lock);
 static DEFINE_MUTEX(cpufreq_governor_lock);
 static LIST_HEAD(cpufreq_policy_list);
 
+#ifdef CONFIG_HUAWEI_THERMAL
+#define HUAWEI_THERMAL_POLICY_MAX  800000
+extern int  check_battery_id(void);
+#endif
+
 #ifdef CONFIG_HOTPLUG_CPU
 /*
  * This one keeps track of the previously set governor and user-set
@@ -1976,6 +1981,15 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 		goto error_out;
 	}
 
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (new_policy->min < 533333) {
+		new_policy->min = 800000;
+	}
+	if (new_policy->max < 533333) {
+		new_policy->max = 800000;
+	}
+#endif
+
 	/* verify the cpu speed can be set within this limit */
 	ret = cpufreq_driver->verify(new_policy);
 	if (ret)
@@ -2004,6 +2018,14 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 	policy->min = new_policy->min;
 	policy->max = new_policy->max;
 
+
+#ifdef CONFIG_HUAWEI_THERMAL
+	if(check_battery_id())
+	{
+		pr_debug(" policy->max = %d\n",HUAWEI_THERMAL_POLICY_MAX);
+		policy->max = HUAWEI_THERMAL_POLICY_MAX;
+	}
+#endif
 	pr_debug("new min and max freqs are %u - %u kHz\n",
 					policy->min, policy->max);
 

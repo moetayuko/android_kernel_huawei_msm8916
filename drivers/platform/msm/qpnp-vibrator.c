@@ -180,6 +180,7 @@ static void qpnp_vib_enable(struct timed_output_dev *dev, int value)
 	struct qpnp_vib *vib = container_of(dev, struct qpnp_vib,
 					 timed_dev);
 
+	dev_err(&vib->spmi->dev,"%s,value=%d\n",__FUNCTION__,value);
 	mutex_lock(&vib->lock);
 	hrtimer_cancel(&vib->vib_timer);
 

@@ -20,6 +20,10 @@
 #include <linux/mmc/core.h>
 #include <linux/mmc/pm.h>
 
+#ifdef CONFIG_HW_MMC_TEST
+#define CARD_ADDR_MAGIC 0xA5A55A5A
+#endif
+
 struct mmc_ios {
 	unsigned int	clock;			/* clock rate */
 	unsigned int	old_rate;       /* saved clock rate */
@@ -329,6 +333,12 @@ struct mmc_host {
 #define MMC_CAP2_CORE_PM       (1 << 24)       /* use PM framework */
 #define MMC_CAP2_HS400		(MMC_CAP2_HS400_1_8V | \
 				 MMC_CAP2_HS400_1_2V)
+
+#ifdef CONFIG_HUAWEI_KERNEL
+/* Add capabilities for custom functions, from 31 to 1 to avoid conflict with linux caps*/
+#define MMC_CAP2_POWER_OFF_NO_CARD	(1 << 31)        /* when there is no card, power off vdd and vddio*/
+#endif
+
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
 	int			clk_requests;	/* internal reference counter */
@@ -344,7 +354,7 @@ struct mmc_host {
 	/* host specific block data */
 	unsigned int		max_seg_size;	/* see blk_queue_max_segment_size */
 	unsigned short		max_segs;	/* see blk_queue_max_segments */
-	unsigned short		unused;
+	unsigned short		unused;    /*unused is used for the flag of SD card init successful*/
 	unsigned int		max_req_size;	/* maximum number of bytes in one req */
 	unsigned int		max_blk_size;	/* maximum size of one mmc block */
 	unsigned int		max_blk_count;	/* maximum number of blocks in one req */
@@ -433,6 +443,9 @@ struct mmc_host {
 		ktime_t start;
 	} perf;
 	bool perf_enable;
+#endif
+#ifdef CONFIG_HW_MMC_TEST
+    int test_status;            /* save mmc_test status */
 #endif
 	struct {
 		unsigned long	busy_time_us;

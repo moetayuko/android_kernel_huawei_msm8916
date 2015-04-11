@@ -15,6 +15,57 @@
 #define _WCNSS_WLAN_H_
 
 #include <linux/device.h>
+#ifdef CONFIG_HUAWEI_WIFI
+#include <linux/log_module.h>
+
+int wcnss_debug_mask_get(void);
+
+extern  int wlan_log_debug_mask;
+#define WLAN_ERROR  1
+#define WLAN_INFO 2
+#define WLAN_DBG  3
+
+/* error log */
+#ifndef wlan_log_err
+#define wlan_log_err(x...)                \
+do{                                     \
+    if( wlan_log_debug_mask >= WLAN_ERROR )   \
+    {                                   \
+        printk(KERN_ERR "wlan:" x); \
+    }                                   \
+                                        \
+}while(0)
+#endif
+/* opened at all times default*/
+
+/* info log */
+#ifndef wlan_log_info
+#define wlan_log_info(x...)               \
+do{                                     \
+    if( ((KERNEL_HWFLOW) && (wlan_log_debug_mask >= WLAN_INFO)) || (wcnss_debug_mask_get() >= WLAN_ERROR) )  \
+    {                                   \
+        printk(KERN_ERR "wlan:" x); \
+    }                                   \
+                                        \
+}while(0)
+#endif
+/* the INFO level log must add the KERNEL_HWFLOW for condition */
+/*After the produce released, KERNEL_HWFLOW will be set to false by the PMO to close the INFO level log */
+
+/* debug log */
+#ifndef wlan_log_debug
+#define wlan_log_debug(x...)              \
+do{                                     \
+    if( ((KERNEL_HWFLOW) &&( wlan_log_debug_mask >= WLAN_DBG )) || (wcnss_debug_mask_get() >= WLAN_ERROR) )   \
+    {                                   \
+        printk(KERN_ERR "wlan:" x); \
+    }                                   \
+                                        \
+}while(0)
+#endif
+/* closed at all times default*/
+/*After the produce released, KERNEL_HWFLOW will be set to false by the PMO to close the DEBUG level log */
+#endif
 
 enum wcnss_opcode {
 	WCNSS_WLAN_SWITCH_OFF = 0,

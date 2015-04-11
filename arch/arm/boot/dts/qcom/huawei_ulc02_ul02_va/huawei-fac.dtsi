@@ -1,0 +1,9 @@
+ / {
+        huawei_fac_info {
+                  compatible = "huawei,hw_fac_info";
+                  fac,product_name = "HUAWEI Y630-UL02";
+                  fac,hardware_ver = "HL1ULC02UL02TM";
+                  fac,software_ver = "MSM8916_Y630-UL02_VA";
+                  status = "ok";
+        };
+};

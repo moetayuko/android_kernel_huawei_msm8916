@@ -93,14 +93,19 @@
 
 #define QPNP_INT_TEST_VAL					0xE1
 
+/* CR 740915 Reset the status variable for each ADC conversion which reads EOC status from HW.  */
 #define QPNP_VADC_DATA0						0x60
 #define QPNP_VADC_DATA1						0x61
 #define QPNP_VADC_CONV_TIMEOUT_ERR				2
-#define QPNP_VADC_CONV_TIME_MIN					2000
-#define QPNP_VADC_CONV_TIME_MAX					2100
+#define QPNP_VADC_CONV_TIME_MIN					1000
+#define QPNP_VADC_CONV_TIME_MAX					1100
 #define QPNP_ADC_COMPLETION_TIMEOUT				HZ
 #define QPNP_VADC_ERR_COUNT					20
+#define QPNP_VADC_ABSOLUTE_RECALIB_OFFSET			8
+#define QPNP_VADC_RATIOMETRIC_RECALIB_OFFSET			12
+#define QPNP_VADC_RECALIB_MAXCNT				10
 
+/* CR 740915 Reset the status variable for each ADC conversion which reads EOC status from HW.  */
 struct qpnp_vadc_chip {
 	struct device			*dev;
 	struct qpnp_adc_drv		*adc;
@@ -113,6 +118,7 @@ struct qpnp_vadc_chip {
 	u8				id;
 	struct work_struct		trigger_completion_work;
 	bool				vadc_poll_eoc;
+	bool				vadc_recalib_check;
 	u8				revision_ana_minor;
 	u8				revision_dig_major;
 	struct sensor_device_attribute	sens_attr[0];
@@ -131,6 +137,9 @@ static struct qpnp_vadc_scale_fn vadc_scale_fn[] = {
 	[SCALE_QRD_SKUAA_BATT_THERM] = {qpnp_adc_scale_qrd_skuaa_batt_therm},
 	[SCALE_SMB_BATT_THERM] = {qpnp_adc_scale_smb_batt_therm},
 	[SCALE_QRD_SKUG_BATT_THERM] = {qpnp_adc_scale_qrd_skug_batt_therm},
+#ifdef CONFIG_HUAWEI_KERNEL
+	[SCALE_HUAWEI_PA_THERM]	= {qpnp_adc_scale_huawei_pa_therm},
+#endif
 	[SCALE_QRD_SKUH_BATT_THERM] = {qpnp_adc_scale_qrd_skuh_batt_therm},
 };
 
@@ -954,14 +963,20 @@ static void qpnp_vadc_625mv_channel_sel(struct qpnp_vadc_chip *vadc,
 	}
 }
 
-static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
+/* CR 740915 Reset the status variable for each ADC conversion which reads EOC status from HW.  */
+int32_t qpnp_vadc_calib_vref(struct qpnp_vadc_chip *vadc,
+					enum qpnp_adc_calib_type calib_type,
+					int *calib_data)
 {
 	struct qpnp_adc_amux_properties conv;
-	int rc, calib_read_1, calib_read_2, count = 0;
+	int rc, count = 0, calib_read = 0;
 	u8 status1 = 0;
-	uint32_t ref_channel_sel = 0;
 
-	conv.amux_channel = REF_125V;
+	if (calib_type == CALIB_ABSOLUTE)
+		conv.amux_channel = REF_125V;
+	else if (calib_type == CALIB_RATIOMETRIC)
+		conv.amux_channel = VDD_VADC;
+
 	conv.decimation = DECIMATION_TYPE2;
 	conv.mode_sel = ADC_OP_NORMAL_MODE << QPNP_VADC_OP_MODE_SHIFT;
 	conv.hw_settle_time = ADC_CHANNEL_HW_SETTLE_DELAY_0US;
@@ -979,7 +994,7 @@ static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 			return rc;
 		status1 &= QPNP_VADC_STATUS1_REQ_STS_EOC_MASK;
 		usleep_range(QPNP_VADC_CONV_TIME_MIN,
-					QPNP_VADC_CONV_TIME_MAX);
+				QPNP_VADC_CONV_TIME_MAX);
 		count++;
 		if (count > QPNP_VADC_ERR_COUNT) {
 			rc = -ENODEV;
@@ -987,33 +1002,50 @@ static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 		}
 	}
 
-	rc = qpnp_vadc_read_conversion_result(vadc, &calib_read_1);
+	rc = qpnp_vadc_read_conversion_result(vadc, &calib_read);
 	if (rc) {
 		pr_err("qpnp adc read adc failed with %d\n", rc);
 		goto calib_fail;
 	}
+	*calib_data = calib_read;
+calib_fail:
+	return rc;
+}
 
-	qpnp_vadc_625mv_channel_sel(vadc, &ref_channel_sel);
-	conv.amux_channel = ref_channel_sel;
+
+int32_t qpnp_vadc_calib_gnd(struct qpnp_vadc_chip *vadc,
+					enum qpnp_adc_calib_type calib_type,
+					int *calib_data)
+{
+	struct qpnp_adc_amux_properties conv;
+	int rc, count = 0, calib_read = 0;
+	u8 status1 = 0;
+	uint32_t ref_channel_sel = 0;
+
+	if (calib_type == CALIB_ABSOLUTE) {
+		qpnp_vadc_625mv_channel_sel(vadc, &ref_channel_sel);
+		conv.amux_channel = ref_channel_sel;
+	} else if (calib_type == CALIB_RATIOMETRIC)
+		conv.amux_channel = GND_REF;
+
 	conv.decimation = DECIMATION_TYPE2;
 	conv.mode_sel = ADC_OP_NORMAL_MODE << QPNP_VADC_OP_MODE_SHIFT;
 	conv.hw_settle_time = ADC_CHANNEL_HW_SETTLE_DELAY_0US;
 	conv.fast_avg_setup = ADC_FAST_AVG_SAMPLE_1;
+
 	rc = qpnp_vadc_configure(vadc, &conv);
 	if (rc) {
-		pr_err("qpnp adc configure failed with %d\n", rc);
+		pr_err("qpnp_vadc configure failed with %d\n", rc);
 		goto calib_fail;
 	}
 
-	status1 = 0;
-	count = 0;
 	while (status1 != QPNP_VADC_STATUS1_EOC) {
 		rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_STATUS1, &status1);
 		if (rc < 0)
 			return rc;
 		status1 &= QPNP_VADC_STATUS1_REQ_STS_EOC_MASK;
 		usleep_range(QPNP_VADC_CONV_TIME_MIN,
-					QPNP_VADC_CONV_TIME_MAX);
+				QPNP_VADC_CONV_TIME_MAX);
 		count++;
 		if (count > QPNP_VADC_ERR_COUNT) {
 			rc = -ENODEV;
@@ -1021,24 +1053,42 @@ static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 		}
 	}
 
-	rc = qpnp_vadc_read_conversion_result(vadc, &calib_read_2);
+	rc = qpnp_vadc_read_conversion_result(vadc, &calib_read);
 	if (rc) {
 		pr_err("qpnp adc read adc failed with %d\n", rc);
 		goto calib_fail;
 	}
+	*calib_data = calib_read;
+calib_fail:
+	return rc;
+}
 
+static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
+{
+	int rc, calib_read_1 = 0, calib_read_2 = 0;
+
+	rc = qpnp_vadc_calib_vref(vadc, CALIB_ABSOLUTE, &calib_read_1);
+	if (rc) {
+		pr_err("qpnp adc absolute vref calib failed with %d\n", rc);
+		goto calib_fail;
+	}
+	rc = qpnp_vadc_calib_gnd(vadc, CALIB_ABSOLUTE, &calib_read_2);
+	if (rc) {
+		pr_err("qpnp adc absolute gnd calib failed with %d\n", rc);
+		goto calib_fail;
+	}
 	pr_debug("absolute reference raw: 625mV:0x%x 1.25V:0x%x\n",
 				calib_read_2, calib_read_1);
 
 	if (calib_read_1 == calib_read_2) {
 		pr_err("absolute reference raw: 625mV:0x%x 1.25V:0x%x\n",
-				calib_read_2, calib_read_1);
+			calib_read_2, calib_read_1);
 		rc = -EINVAL;
 		goto calib_fail;
 	}
 
 	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_ABSOLUTE].dy =
-					(calib_read_1 - calib_read_2);
+				(calib_read_1 - calib_read_2);
 
 	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_ABSOLUTE].dx
 						= QPNP_ADC_625_UV;
@@ -1046,70 +1096,17 @@ static int32_t qpnp_vadc_calib_device(struct qpnp_vadc_chip *vadc)
 					calib_read_1;
 	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_ABSOLUTE].adc_gnd =
 					calib_read_2;
-	/* Ratiometric Calibration */
-	conv.amux_channel = VDD_VADC;
-	conv.decimation = DECIMATION_TYPE2;
-	conv.mode_sel = ADC_OP_NORMAL_MODE << QPNP_VADC_OP_MODE_SHIFT;
-	conv.hw_settle_time = ADC_CHANNEL_HW_SETTLE_DELAY_0US;
-	conv.fast_avg_setup = ADC_FAST_AVG_SAMPLE_1;
-	rc = qpnp_vadc_configure(vadc, &conv);
+
+	calib_read_1 = 0;
+	calib_read_2 = 0;
+	rc = qpnp_vadc_calib_vref(vadc, CALIB_RATIOMETRIC, &calib_read_1);
 	if (rc) {
-		pr_err("qpnp adc configure failed with %d\n", rc);
+		pr_err("qpnp adc ratiometric vref calib failed with %d\n", rc);
 		goto calib_fail;
 	}
-
-	status1 = 0;
-	count = 0;
-	while (status1 != QPNP_VADC_STATUS1_EOC) {
-		rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_STATUS1, &status1);
-		if (rc < 0)
-			return rc;
-		status1 &= QPNP_VADC_STATUS1_REQ_STS_EOC_MASK;
-		usleep_range(QPNP_VADC_CONV_TIME_MIN,
-					QPNP_VADC_CONV_TIME_MAX);
-		count++;
-		if (count > QPNP_VADC_ERR_COUNT) {
-			rc = -ENODEV;
-			goto calib_fail;
-		}
-	}
-
-	rc = qpnp_vadc_read_conversion_result(vadc, &calib_read_1);
+	rc = qpnp_vadc_calib_gnd(vadc, CALIB_RATIOMETRIC, &calib_read_2);
 	if (rc) {
-		pr_err("qpnp adc read adc failed with %d\n", rc);
-		goto calib_fail;
-	}
-
-	conv.amux_channel = GND_REF;
-	conv.decimation = DECIMATION_TYPE2;
-	conv.mode_sel = ADC_OP_NORMAL_MODE << QPNP_VADC_OP_MODE_SHIFT;
-	conv.hw_settle_time = ADC_CHANNEL_HW_SETTLE_DELAY_0US;
-	conv.fast_avg_setup = ADC_FAST_AVG_SAMPLE_1;
-	rc = qpnp_vadc_configure(vadc, &conv);
-	if (rc) {
-		pr_err("qpnp adc configure failed with %d\n", rc);
-		goto calib_fail;
-	}
-
-	status1 = 0;
-	count = 0;
-	while (status1 != QPNP_VADC_STATUS1_EOC) {
-		rc = qpnp_vadc_read_reg(vadc, QPNP_VADC_STATUS1, &status1);
-		if (rc < 0)
-			return rc;
-		status1 &= QPNP_VADC_STATUS1_REQ_STS_EOC_MASK;
-		usleep_range(QPNP_VADC_CONV_TIME_MIN,
-					QPNP_VADC_CONV_TIME_MAX);
-		count++;
-		if (count > QPNP_VADC_ERR_COUNT) {
-			rc = -ENODEV;
-			goto calib_fail;
-		}
-	}
-
-	rc = qpnp_vadc_read_conversion_result(vadc, &calib_read_2);
-	if (rc) {
-		pr_err("qpnp adc read adc failed with %d\n", rc);
+		pr_err("qpnp adc ratiometric gnd calib failed with %d\n", rc);
 		goto calib_fail;
 	}
 
@@ -1145,6 +1142,8 @@ int32_t qpnp_get_vadc_gain_and_offset(struct qpnp_vadc_chip *vadc,
 	rc = qpnp_vadc_is_valid(vadc);
 	if (rc < 0)
 		return rc;
+    /* CR 740915 Reset the status variable for each ADC conversion which reads EOC status from HW.  */
+	mutex_lock(&vadc->adc->adc_lock);
 
 	switch (calib_type) {
 	case CALIB_RATIOMETRIC:
@@ -1166,10 +1165,11 @@ int32_t qpnp_get_vadc_gain_and_offset(struct qpnp_vadc_chip *vadc,
 	vadc->adc->amux_prop->chan_prop->adc_graph[CALIB_ABSOLUTE].adc_gnd;
 	break;
 	default:
-		return -EINVAL;
+		rc = -EINVAL;
 	}
 
-	return 0;
+	mutex_unlock(&vadc->adc->adc_lock);
+	return rc;
 }
 EXPORT_SYMBOL(qpnp_get_vadc_gain_and_offset);
 
@@ -1192,32 +1192,22 @@ struct qpnp_vadc_chip *qpnp_get_vadc(struct device *dev, const char *name)
 }
 EXPORT_SYMBOL(qpnp_get_vadc);
 
+/* CR 740915 Reset the status variable for each ADC conversion which reads EOC status from HW.  */
 int32_t qpnp_vadc_conv_seq_request(struct qpnp_vadc_chip *vadc,
 				enum qpnp_vadc_trigger trigger_channel,
 					enum qpnp_vadc_channels channel,
 					struct qpnp_vadc_result *result)
 {
-	int rc = 0, scale_type, amux_prescaling, dt_index = 0;
-	uint32_t ref_channel, count = 0;
+	int rc = 0, scale_type, amux_prescaling, dt_index = 0, calib_type = 0;
+	uint32_t ref_channel, count = 0, local_idx = 0;
+	int32_t vref_calib = 0, gnd_calib = 0, new_vref_calib = 0, offset = 0;
+	int32_t calib_offset = 0;
 	u8 status1 = 0;
 
 	if (qpnp_vadc_is_valid(vadc))
 		return -EPROBE_DEFER;
 
 	mutex_lock(&vadc->adc->adc_lock);
-
-	if (!vadc->vadc_init_calib) {
-		rc = qpnp_vadc_version_check(vadc);
-		if (rc)
-			goto fail_unlock;
-
-		rc = qpnp_vadc_calib_device(vadc);
-		if (rc) {
-			pr_err("Calibration failed\n");
-			goto fail_unlock;
-		} else
-			vadc->vadc_init_calib = true;
-	}
 
 	if (channel == REF_625MV) {
 		qpnp_vadc_625mv_channel_sel(vadc, &ref_channel);
@@ -1236,6 +1226,36 @@ int32_t qpnp_vadc_conv_seq_request(struct qpnp_vadc_chip *vadc,
 		goto fail_unlock;
 	}
 
+	calib_type = vadc->adc->adc_channels[dt_index].calib_type;
+	if (calib_type >= CALIB_NONE) {
+		pr_err("not a valid calib_type\n");
+		rc = -EINVAL;
+		goto fail_unlock;
+	}
+	calib_offset = (calib_type == CALIB_ABSOLUTE) ?
+		QPNP_VADC_ABSOLUTE_RECALIB_OFFSET :
+		QPNP_VADC_RATIOMETRIC_RECALIB_OFFSET;
+	rc = qpnp_vadc_version_check(vadc);
+	if (rc)
+		goto fail_unlock;
+
+	if (vadc->vadc_recalib_check) {
+		rc = qpnp_vadc_calib_vref(vadc, calib_type, &vref_calib);
+		if (rc) {
+			pr_err("Calibration failed\n");
+			goto fail_unlock;
+		}
+	} else if (!vadc->vadc_init_calib) {
+		rc = qpnp_vadc_calib_device(vadc);
+		if (rc) {
+			pr_err("Calibration failed\n");
+			goto fail_unlock;
+		} else
+			vadc->vadc_init_calib = true;
+	}
+
+recalibrate:
+	status1 = 0;
 	vadc->adc->amux_prop->decimation =
 			vadc->adc->adc_channels[dt_index].adc_decimation;
 	vadc->adc->amux_prop->hw_settle_time =
@@ -1269,6 +1289,8 @@ int32_t qpnp_vadc_conv_seq_request(struct qpnp_vadc_chip *vadc,
 			if (rc < 0)
 				goto fail_unlock;
 			status1 &= QPNP_VADC_STATUS1_REQ_STS_EOC_MASK;
+			if (status1 == QPNP_VADC_STATUS1_EOC)
+				break;
 			usleep_range(QPNP_VADC_CONV_TIME_MIN,
 					QPNP_VADC_CONV_TIME_MAX);
 			count++;
@@ -1316,6 +1338,64 @@ int32_t qpnp_vadc_conv_seq_request(struct qpnp_vadc_chip *vadc,
 		goto fail_unlock;
 	}
 
+	if (vadc->vadc_recalib_check) {
+		rc = qpnp_vadc_calib_gnd(vadc, calib_type, &gnd_calib);
+		if (rc) {
+			pr_err("Calibration failed\n");
+			goto fail_unlock;
+		}
+		rc = qpnp_vadc_calib_vref(vadc, calib_type, &new_vref_calib);
+		if (rc < 0) {
+			pr_err("qpnp vadc calib read failed with %d\n", rc);
+			goto fail_unlock;
+		}
+
+		if (local_idx >= QPNP_VADC_RECALIB_MAXCNT) {
+			pr_err("invalid recalib count=%d\n", local_idx);
+			rc = -EINVAL;
+			goto fail_unlock;
+		}
+		pr_debug(
+			"chan=%d, calib=%s, vref_calib=0x%x, gnd_calib=0x%x, new_vref_calib=0x%x\n",
+			channel,
+			((calib_type == CALIB_ABSOLUTE) ?
+			"ABSOLUTE" : "RATIOMETRIC"),
+			vref_calib, gnd_calib, new_vref_calib);
+
+		offset = (new_vref_calib - vref_calib);
+		if (offset < 0)
+			offset = -offset;
+		if (offset <= calib_offset) {
+			pr_debug(
+				"qpnp vadc recalibration not required,offset:%d\n",
+								offset);
+			local_idx = 0;
+		vadc->adc->amux_prop->chan_prop->adc_graph[calib_type].dy =
+						(vref_calib - gnd_calib);
+		vadc->adc->amux_prop->chan_prop->adc_graph[calib_type].dx =
+			(calib_type == CALIB_ABSOLUTE) ? QPNP_ADC_625_UV :
+					vadc->adc->adc_prop->adc_vdd_reference;
+		vadc->adc->amux_prop->chan_prop->adc_graph[calib_type].adc_vref
+								= vref_calib;
+		vadc->adc->amux_prop->chan_prop->adc_graph[calib_type].adc_gnd
+								= gnd_calib;
+		} else {
+			vref_calib = new_vref_calib;
+			local_idx = local_idx + 1;
+			if (local_idx >= QPNP_VADC_RECALIB_MAXCNT) {
+				pr_err(
+				"qpnp_vadc recalibration failed, count=%d",
+								local_idx);
+			} else {
+				pr_debug(
+				"qpnp vadc recalibration requested,offset:%d\n",
+								offset);
+				offset = 0;
+				goto recalibrate;
+			}
+		}
+	}
+
 	amux_prescaling =
 		vadc->adc->adc_channels[dt_index].chan_path_prescaling;
 
@@ -1339,6 +1419,11 @@ int32_t qpnp_vadc_conv_seq_request(struct qpnp_vadc_chip *vadc,
 
 	vadc_scale_fn[scale_type].chan(vadc, result->adc_code,
 		vadc->adc->adc_prop, vadc->adc->amux_prop->chan_prop, result);
+
+	pr_debug("channel=%d, adc_code=%d, result=%lld\n",
+			channel,
+			result->adc_code,
+			result->physical);
 
 fail_unlock:
 	mutex_unlock(&vadc->adc->adc_lock);
@@ -1391,28 +1476,17 @@ static void qpnp_vadc_unlock(struct qpnp_vadc_chip *vadc)
 	mutex_unlock(&vadc->adc->adc_lock);
 }
 
+/* CR 740915 Reset the status variable for each ADC conversion which reads EOC status from HW.  */
 int32_t qpnp_vadc_iadc_sync_request(struct qpnp_vadc_chip *vadc,
 				enum qpnp_vadc_channels channel)
 {
-	int rc = 0, dt_index = 0;
+	int rc = 0, dt_index = 0, calib_type = 0;
 
 	if (qpnp_vadc_is_valid(vadc))
 		return -EPROBE_DEFER;
 
 	qpnp_vadc_lock(vadc);
 
-	if (!vadc->vadc_init_calib) {
-		rc = qpnp_vadc_version_check(vadc);
-		if (rc)
-			goto fail;
-
-		rc = qpnp_vadc_calib_device(vadc);
-		if (rc) {
-			pr_err("Calibration failed\n");
-			goto fail;
-		} else
-			vadc->vadc_init_calib = true;
-	}
 
 	vadc->adc->amux_prop->amux_channel = channel;
 
@@ -1424,6 +1498,20 @@ int32_t qpnp_vadc_iadc_sync_request(struct qpnp_vadc_chip *vadc,
 		pr_err("not a valid VADC channel\n");
 		rc = -EINVAL;
 		goto fail;
+	}
+
+	calib_type = vadc->adc->adc_channels[dt_index].calib_type;
+	if (!vadc->vadc_init_calib) {
+		rc = qpnp_vadc_version_check(vadc);
+		if (rc)
+			goto fail;
+
+		rc = qpnp_vadc_calib_device(vadc);
+		if (rc) {
+			pr_err("Calibration failed\n");
+			goto fail;
+		} else
+			vadc->vadc_init_calib = true;
 	}
 
 	vadc->adc->amux_prop->decimation =
@@ -1551,6 +1639,58 @@ hwmon_err_sens:
 	return rc;
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+static struct qpnp_vadc_chip *qpnp_vadc;
+static int  therm_pa;
+#define BUF_MAX_LENGTH		8
+static int pa_mpp_number = -1;
+static int cpu_mpp_number = -1;
+static int get_pa_temp(char *buf,struct kernel_param *kp )
+{
+	int rc = 0;
+	struct qpnp_vadc_result results;
+
+	if(pa_mpp_number < 0 || qpnp_vadc == NULL)
+	{
+		return  0;
+	}
+	rc = qpnp_vadc_read(qpnp_vadc,pa_mpp_number, &results);
+	if (rc) {
+		pr_debug("Unable to read pa temperature rc=%d\n", rc);
+		return 0;
+	}
+	pr_debug("get_pa_temp %d %lld\n",
+		results.adc_code, results.physical);
+
+	return snprintf(buf,BUF_MAX_LENGTH, "%d", (int)results.physical);
+}
+
+module_param_call(therm_pa,NULL,get_pa_temp,&therm_pa,0644);
+
+static int therm_cpu;
+static int get_cpu_temp(char *buf,struct kernel_param *kp )
+{
+	int rc = 0;
+	struct qpnp_vadc_result results;
+	if(cpu_mpp_number < 0 || qpnp_vadc == NULL)
+	{
+		return 0;
+	}
+
+	rc = qpnp_vadc_read(qpnp_vadc,cpu_mpp_number, &results);
+	if (rc) {
+		pr_debug("Unable to read cpu temperature rc=%d\n", rc);
+		return 0;
+	}
+	pr_debug("get_cpu_temp %d %lld\n",
+		results.adc_code, results.physical);
+
+	return snprintf(buf,BUF_MAX_LENGTH, "%d", (int)results.physical);
+}
+
+module_param_call(therm_cpu,NULL,get_cpu_temp,&therm_cpu,0644);
+#endif
+
 static int qpnp_vadc_probe(struct spmi_device *spmi)
 {
 	struct qpnp_vadc_chip *vadc;
@@ -1592,6 +1732,20 @@ static int qpnp_vadc_probe(struct spmi_device *spmi)
 	}
 	mutex_init(&vadc->adc->adc_lock);
 
+#ifdef CONFIG_HUAWEI_KERNEL
+	rc = of_property_read_u32(spmi->dev.of_node,"pa_mpp_number",&pa_mpp_number);
+	if(rc)
+	{
+		dev_err(&spmi->dev, "failed to read pa_mpp_number device tree\n");
+	}
+	rc = of_property_read_u32(spmi->dev.of_node,"cpu_mpp_number",&cpu_mpp_number);
+	if(rc)
+	{
+		dev_err(&spmi->dev, "failed to read cpu_mpp_number device tree\n");
+	}
+	qpnp_vadc = vadc;
+#endif
+
 	rc = qpnp_vadc_init_hwmon(vadc, spmi);
 	if (rc) {
 		dev_err(&spmi->dev, "failed to initialize qpnp hwmon adc\n");
@@ -1628,6 +1782,10 @@ static int qpnp_vadc_probe(struct spmi_device *spmi)
 	}
 
 	INIT_WORK(&vadc->trigger_completion_work, qpnp_vadc_work);
+
+    /* CR 740915 Reset the status variable for each ADC conversion which reads EOC status from HW.  */
+	vadc->vadc_recalib_check = of_property_read_bool(node,
+						"qcom,vadc-recalib-check");
 
 	vadc->vadc_poll_eoc = of_property_read_bool(node,
 						"qcom,vadc-poll-eoc");

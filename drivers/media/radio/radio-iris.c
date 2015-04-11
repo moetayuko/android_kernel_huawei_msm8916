@@ -5000,7 +5000,8 @@ static int initialise_recv(struct iris_device *radio)
 		return -EINVAL;
 	}
 
-	radio->mute_mode.soft_mute = CTRL_ON;
+/* disabel soft mute */
+	radio->mute_mode.soft_mute = CTRL_OFF;
 	retval = hci_set_fm_mute_mode(&radio->mute_mode,
 					radio->fm_hdev);
 

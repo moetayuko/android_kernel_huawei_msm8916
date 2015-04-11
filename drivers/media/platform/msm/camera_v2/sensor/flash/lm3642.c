@@ -25,30 +25,75 @@
 #define LM3642_DBG(fmt, args...)
 #endif
 
+//lm3642 flash flag register
+#define FLASH_FLAG_REGISTER 0x0B
+
+
+#define ENABLE_REGISTER 0x0A
+#define MODE_BIT_MASK 0x03
+#define MODE_BIT_STANDBY 0x00
+#define MODE_BIT_INDICATOR 0x01
+#define MODE_BIT_TORCH 0x02
+#define MODE_BIT_FLASH 0x03
+#define ENABLE_BIT_FLASH 0x20
+#define ENABLE_BIT_TORCH 0x10
+
+#define CURRENT_REGISTER 0x09
+#define CURRENT_TORCH_MASK 0x70
+#define CURRENT_TORCH_SHIFT 4
+#define CURRENT_FLASH_MASK 0x0F
+#define CURRENT_FLASH_SHIFT 0
+
+#define FLASH_FEATURE_REGISTER 0x08
+#define FLASH_TIMEOUT_MASK 0x07
+#define FLASH_TIMEOUT_SHIFT 0
+
+#define FLASH_CHIP_ID_MASK 0x07
+#define FLASH_CHIP_ID 0x0
+
+#define IVFM_MODE_REGISTER 0x01
+#define EBABLE_BIT_IVFM    0x80
+
+// Default flash high current, 8 corresponds to 843.75mA.
+#define FLASH_HIGH_CURRENT 8
 
 static struct msm_led_flash_ctrl_t fctrl;
 static struct i2c_driver lm3642_i2c_driver;
 
+
+/*Enable IFVM and set it threshold to 3.2v ,also set flash ramp time to 512us */
 static struct msm_camera_i2c_reg_array lm3642_init_array[] = {
-	{0x0A, 0x00},
-	{0x08, 0x07},
-	{0x09, 0x19},
+	{ENABLE_REGISTER, MODE_BIT_STANDBY | EBABLE_BIT_IVFM},
+	/* disable UVLO */
+	{IVFM_MODE_REGISTER, 0x8C},
 };
 
+/*Enable IFVM and set it threshold to 3.2v ,also set flash ramp time to 512us */
+//delete "set current action"
 static struct msm_camera_i2c_reg_array lm3642_off_array[] = {
-	{0x0A, 0x00},
+	{ENABLE_REGISTER, MODE_BIT_STANDBY | EBABLE_BIT_IVFM},
 };
 
 static struct msm_camera_i2c_reg_array lm3642_release_array[] = {
-	{0x0A, 0x00},
+	{ENABLE_REGISTER, MODE_BIT_STANDBY | EBABLE_BIT_IVFM},
 };
 
 static struct msm_camera_i2c_reg_array lm3642_low_array[] = {
-	{0x0A, 0x22},
+	{CURRENT_REGISTER, 0x40},//234mA
+	{ENABLE_REGISTER, MODE_BIT_TORCH | EBABLE_BIT_IVFM},
 };
 
 static struct msm_camera_i2c_reg_array lm3642_high_array[] = {
-	{0x0A, 0x23},
+	{CURRENT_REGISTER, 0x08},//843.75mA
+	// The duration of high flash, 0x07 corresponds to 800ms.
+	//{FLASH_FEATURE_REGISTER, 0x07},
+	{FLASH_FEATURE_REGISTER, 0x0F},//flash ramp time 512us and flash timeout 800ms
+	{ENABLE_REGISTER, MODE_BIT_FLASH | ENABLE_BIT_FLASH | EBABLE_BIT_IVFM},
+};
+
+static struct msm_camera_i2c_reg_array lm3642_torch_array[] = {
+	{CURRENT_REGISTER, 0x20},//140mA
+	{ENABLE_REGISTER, MODE_BIT_TORCH | EBABLE_BIT_IVFM},
 };
 
 
@@ -95,6 +140,43 @@ static int32_t msm_lm3642_torch_create_classdev(struct device *dev ,
 	return 0;
 };
 
+/****************************************************************************
+* FunctionName: msm_flash_clear_err_and_unlock;
+* Description : clear the error and unlock the IC ;
+* NOTE: this funtion must be called before register is read and write
+***************************************************************************/
+int msm_flash_clear_err_and_unlock(struct msm_led_flash_ctrl_t *fctrl){
+
+        int rc = 0;
+        uint16_t reg_value=0;
+
+        LM3642_DBG("%s entry\n", __func__);
+
+        if (!fctrl) {
+                pr_err("%s:%d fctrl NULL\n", __func__, __LINE__);
+                return -EINVAL;
+        }
+
+
+        if (fctrl->flash_i2c_client) {
+                rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_read(
+                        fctrl->flash_i2c_client,
+                        FLASH_FLAG_REGISTER,&reg_value, MSM_CAMERA_I2C_BYTE_DATA);
+                if (rc < 0){
+                        pr_err("clear err and unlock %s:%d failed\n", __func__, __LINE__);
+                }
+
+                LM3642_DBG("clear err and unlock success:%02x\n",reg_value);
+        }else{
+                pr_err("%s:%d flash_i2c_client NULL\n", __func__, __LINE__);
+                return -EINVAL;
+        }
+
+
+       return 0;
+
+}
+
 int msm_flash_lm3642_led_init(struct msm_led_flash_ctrl_t *fctrl)
 {
 	int rc = 0;
@@ -105,10 +187,8 @@ int msm_flash_lm3642_led_init(struct msm_led_flash_ctrl_t *fctrl)
 	flashdata = fctrl->flashdata;
 	power_info = &flashdata->power_info;
 
-	gpio_set_value_cansleep(
-		power_info->gpio_conf->gpio_num_info->
-		gpio_num[SENSOR_GPIO_FL_NOW],
-		GPIO_OUT_LOW);
+	//clear the err and unlock IC, this function must be called before read and write register
+	msm_flash_clear_err_and_unlock(fctrl);
 
 	if (fctrl->flash_i2c_client && fctrl->reg_setting) {
 		rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_write_table(
@@ -117,6 +197,10 @@ int msm_flash_lm3642_led_init(struct msm_led_flash_ctrl_t *fctrl)
 		if (rc < 0)
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 	}
+	gpio_set_value_cansleep(
+		power_info->gpio_conf->gpio_num_info->
+		gpio_num[SENSOR_GPIO_FL_NOW],
+		GPIO_OUT_LOW);
 	return rc;
 }
 
@@ -134,10 +218,8 @@ int msm_flash_lm3642_led_release(struct msm_led_flash_ctrl_t *fctrl)
 		return -EINVAL;
 	}
 
-	gpio_set_value_cansleep(
-		power_info->gpio_conf->gpio_num_info->
-		gpio_num[SENSOR_GPIO_FL_NOW],
-		GPIO_OUT_LOW);
+	//clear the err and unlock IC, this function must be called before read and write register
+	msm_flash_clear_err_and_unlock(fctrl);
 	if (fctrl->flash_i2c_client && fctrl->reg_setting) {
 		rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_write_table(
 			fctrl->flash_i2c_client,
@@ -145,6 +227,10 @@ int msm_flash_lm3642_led_release(struct msm_led_flash_ctrl_t *fctrl)
 		if (rc < 0)
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 	}
+	gpio_set_value_cansleep(
+		power_info->gpio_conf->gpio_num_info->
+		gpio_num[SENSOR_GPIO_FL_NOW],
+		GPIO_OUT_LOW);
 	return 0;
 }
 
@@ -162,6 +248,9 @@ int msm_flash_lm3642_led_off(struct msm_led_flash_ctrl_t *fctrl)
 		pr_err("%s:%d fctrl NULL\n", __func__, __LINE__);
 		return -EINVAL;
 	}
+
+	//clear the err and unlock IC, this function must be called before read and write register
+	msm_flash_clear_err_and_unlock(fctrl);
 
 	if (fctrl->flash_i2c_client && fctrl->reg_setting) {
 		rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_write_table(
@@ -189,11 +278,8 @@ int msm_flash_lm3642_led_low(struct msm_led_flash_ctrl_t *fctrl)
 	flashdata = fctrl->flashdata;
 	power_info = &flashdata->power_info;
 
-
-	gpio_set_value_cansleep(
-		power_info->gpio_conf->gpio_num_info->
-		gpio_num[SENSOR_GPIO_FL_NOW],
-		GPIO_OUT_HIGH);
+	//clear the err and unlock IC, this function must be called before read and write register
+	msm_flash_clear_err_and_unlock(fctrl);
 
 	if (fctrl->flash_i2c_client && fctrl->reg_setting) {
 		rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_write_table(
@@ -202,6 +288,10 @@ int msm_flash_lm3642_led_low(struct msm_led_flash_ctrl_t *fctrl)
 		if (rc < 0)
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 	}
+	gpio_set_value_cansleep(
+		power_info->gpio_conf->gpio_num_info->
+		gpio_num[SENSOR_GPIO_FL_NOW],
+		GPIO_OUT_HIGH);
 
 	return rc;
 }
@@ -217,10 +307,8 @@ int msm_flash_lm3642_led_high(struct msm_led_flash_ctrl_t *fctrl)
 
 	power_info = &flashdata->power_info;
 
-	gpio_set_value_cansleep(
-		power_info->gpio_conf->gpio_num_info->
-		gpio_num[SENSOR_GPIO_FL_NOW],
-		GPIO_OUT_HIGH);
+	//clear the err and unlock IC, this function must be called before read and write register
+	msm_flash_clear_err_and_unlock(fctrl);
 
 	if (fctrl->flash_i2c_client && fctrl->reg_setting) {
 		rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_write_table(
@@ -229,6 +317,42 @@ int msm_flash_lm3642_led_high(struct msm_led_flash_ctrl_t *fctrl)
 		if (rc < 0)
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 	}
+	gpio_set_value_cansleep(
+		power_info->gpio_conf->gpio_num_info->
+		gpio_num[SENSOR_GPIO_FL_NOW],
+		GPIO_OUT_HIGH);
+
+	return rc;
+}
+
+/****************************************************************************
+* FunctionName: msm_torch_lm3642_led_on;
+* Description : set torch func ;
+***************************************************************************/
+int msm_torch_lm3642_led_on(struct msm_led_flash_ctrl_t *fctrl)
+{
+	int rc = 0;
+	struct msm_camera_sensor_board_info *flashdata = NULL;
+	struct msm_camera_power_ctrl_t *power_info = NULL;
+	LM3642_DBG("%s:%d called\n", __func__, __LINE__);
+
+	flashdata = fctrl->flashdata;
+	power_info = &flashdata->power_info;
+
+	//clear the err and unlock IC, this function must be called before read and write register
+	msm_flash_clear_err_and_unlock(fctrl);
+
+	if (fctrl->flash_i2c_client && fctrl->reg_setting) {
+		rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_write_table(
+			fctrl->flash_i2c_client,
+			fctrl->reg_setting->torch_setting);
+		if (rc < 0)
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+	}
+	gpio_set_value_cansleep(
+		power_info->gpio_conf->gpio_num_info->
+		gpio_num[SENSOR_GPIO_FL_NOW],
+		GPIO_OUT_HIGH);
 
 	return rc;
 }
@@ -298,6 +422,12 @@ static int msm_flash_lm3642_i2c_remove(struct i2c_client *client)
 	return rc;
 }
 
+static void lm3624_shutdown(struct i2c_client * client)
+{
+    pr_err("[%s],[%d]\n", __func__, __LINE__);
+    msm_flash_led_off(&fctrl);
+    msm_flash_led_release(&fctrl);
+}
 
 static struct i2c_driver lm3642_i2c_driver = {
 	.id_table = lm3642_i2c_id,
@@ -308,6 +438,7 @@ static struct i2c_driver lm3642_i2c_driver = {
 		.owner = THIS_MODULE,
 		.of_match_table = lm3642_i2c_trigger_dt_match,
 	},
+	.shutdown = lm3624_shutdown,
 };
 
 static int __init msm_flash_lm3642_init(void)
@@ -368,12 +499,22 @@ static struct msm_camera_i2c_reg_setting lm3642_high_setting = {
 	.delay = 0,
 };
 
+
+static struct msm_camera_i2c_reg_setting lm3642_torch_setting = {
+	.reg_setting = lm3642_torch_array,
+	.size = ARRAY_SIZE(lm3642_torch_array),
+	.addr_type = MSM_CAMERA_I2C_BYTE_ADDR,
+	.data_type = MSM_CAMERA_I2C_BYTE_DATA,
+	.delay = 0,
+};
+
 static struct msm_led_flash_reg_t lm3642_regs = {
 	.init_setting = &lm3642_init_setting,
 	.off_setting = &lm3642_off_setting,
 	.low_setting = &lm3642_low_setting,
 	.high_setting = &lm3642_high_setting,
 	.release_setting = &lm3642_release_setting,
+	.torch_setting = &lm3642_torch_setting,
 };
 
 static struct msm_flash_fn_t lm3642_func_tbl = {
@@ -384,12 +525,15 @@ static struct msm_flash_fn_t lm3642_func_tbl = {
 	.flash_led_off = msm_flash_lm3642_led_off,
 	.flash_led_low = msm_flash_lm3642_led_low,
 	.flash_led_high = msm_flash_lm3642_led_high,
+	.torch_led_on = msm_torch_lm3642_led_on,
 };
 
 static struct msm_led_flash_ctrl_t fctrl = {
 	.flash_i2c_client = &lm3642_i2c_client,
 	.reg_setting = &lm3642_regs,
 	.func_tbl = &lm3642_func_tbl,
+	// Set default flash high current.
+	.flash_high_current = FLASH_HIGH_CURRENT,
 };
 
 module_init(msm_flash_lm3642_init);

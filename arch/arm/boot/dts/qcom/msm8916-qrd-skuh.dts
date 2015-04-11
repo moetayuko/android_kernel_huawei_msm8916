@@ -14,6 +14,7 @@
 
 #include "msm8916-qrd-skuh.dtsi"
 #include "msm8916-memory.dtsi"
+#include "huawei_g621_tl/huawei.dtsi"
 
 / {
 	model = "Qualcomm Technologies, Inc. MSM 8916 QRD SKUH";

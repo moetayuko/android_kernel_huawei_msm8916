@@ -1,0 +1,9 @@
+ / {
+        huawei_fac_info {
+                  compatible = "huawei,hw_fac_info";
+                  fac,product_name = "HUAWEI Y630-TL";
+                  fac,hardware_ver = "HL1ULC02TLTM";
+                  fac,software_ver = "MSM8916_Y630-TL_VA";
+                  status = "ok";
+        };
+};

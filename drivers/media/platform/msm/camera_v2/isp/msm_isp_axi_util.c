@@ -23,7 +23,7 @@
 #define HANDLE_TO_IDX(handle) (handle & 0xFF)
 
 #define MSM_ISP_MIN_AB 450000000
-#define MSM_ISP_MIN_IB 900000000
+#define MSM_ISP_MIN_IB 4160000000UL
 
 int msm_isp_axi_create_stream(
 	struct msm_vfe_axi_shared_data *axi_data,

@@ -52,3 +52,17 @@ config POWER_RESET_VEXPRESS
 	help
 	  Power off and reset support for the ARM Ltd. Versatile
 	  Express boards.
+
+config HUAWEI_DEBUG_MODE
+	bool "debug mode support"
+	depends on HUAWEI_KERNEL
+        default n
+	help
+	  in debug mode,you can use sysrq and dump mode
+
+config HUAWEI_FACTORY_MODE_ENABLE_DUMP
+	bool "factory mode enable dump"
+	depends on HUAWEI_KERNEL
+        default n
+	help
+	  in factory mode, dump is enable

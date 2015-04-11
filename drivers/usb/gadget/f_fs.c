@@ -757,6 +757,9 @@ static void ffs_epfile_io_complete(struct usb_ep *_ep, struct usb_request *req)
 	}
 }
 
+#ifdef CONFIG_HUAWEI_USB
+#define WRITE_TIME	120
+#endif
 static ssize_t ffs_epfile_io(struct file *file,
 			     char __user *buf, size_t len, int read)
 {
@@ -766,11 +769,23 @@ static ssize_t ffs_epfile_io(struct file *file,
 	ssize_t ret;
 	int halt;
 	int buffer_len = 0;
+#ifdef CONFIG_HUAWEI_USB
+	int err = 0;
 
+	long time_size;
+	if(!read){
+		time_size = WRITE_TIME*HZ;
+	}
+	else{
+		time_size = MAX_SCHEDULE_TIMEOUT;
+	}
+#endif
 	pr_debug("%s: len %zu, read %d\n", __func__, len, read);
 
-	if (atomic_read(&epfile->error))
+	if (atomic_read(&epfile->error)) {
+		pr_err("%s error is set before queuing, read:%d\n", __func__, read);
 		return -ENODEV;
+	}
 
 	goto first_try;
 	do {
@@ -877,12 +892,33 @@ first_try:
 
 		if (unlikely(ret < 0)) {
 			ret = -EIO;
+		/* reolace wait_for_completion_interruptible with wait_for_completion_interruptible_timeout
+		  * wait_for_completion_interruptible_timeout return 0 meaning timeoout
+		  * return -1 meaning be interrupted, retrun > 0 meaning completion: normal thing
+		  * write operation maybe be timeout, read operation will not be timeout
+		  */
+#ifdef CONFIG_HUAWEI_USB
+		} else if((err = wait_for_completion_interruptible_timeout(&done, time_size)) <= 0){
+			spin_lock_irq(&epfile->ffs->eps_lock);
+			if (ep->ep)
+				usb_ep_dequeue(ep->ep, req);
+			spin_unlock_irq(&epfile->ffs->eps_lock);
+
+			if( (!read) && !err) {
+				pr_err("f_fs: %s: wait_for_completion timeout, read:%d,len(%d)\n", __func__, read,len);
+				ret = -ETIMEDOUT;
+			}
+		    else {
+				ret = -EINTR;
+			}
+#else
 		} else if (unlikely(wait_for_completion_interruptible(&done))) {
 			spin_lock_irq(&epfile->ffs->eps_lock);
 			if (ep->ep)
 				usb_ep_dequeue(ep->ep, req);
 			spin_unlock_irq(&epfile->ffs->eps_lock);
 			ret = -EINTR;
+#endif
 		} else {
 			spin_lock_irq(&epfile->ffs->eps_lock);
 			if (ep->ep)
@@ -891,17 +927,22 @@ first_try:
 				ret = -ENODEV;
 			spin_unlock_irq(&epfile->ffs->eps_lock);
 			if (read && ret > 0) {
-				if (ret > len)
+				if (ret > len) {
+					pr_err("%s: !!overflow, read:%d\n, ret (%d) len(%d)", __func__, read, ret, len);
 					ret = -EOVERFLOW;
-				else if (unlikely(copy_to_user(buf, data, ret)))
+				} else if (unlikely(copy_to_user(buf, data, ret))) {
 					ret = -EFAULT;
+				}
 			}
 		}
 	}
 
 	mutex_unlock(&epfile->mutex);
 error:
-	kfree(data);
+	kfree(data);    
+	if (ret < 0)
+		pr_info("return(%d) %dn buff_len:%d\n", ret, len,buffer_len);
+
 	return ret;
 }
 
@@ -975,6 +1016,7 @@ static long ffs_epfile_ioctl(struct file *file, unsigned code,
 			ret = 0;
 			break;
 		case FUNCTIONFS_CLEAR_HALT:
+			pr_err("%s, adbd issues CLEAR_HALT\n", __func__);
 			ret = usb_ep_clear_halt(epfile->ep->ep);
 			break;
 		case FUNCTIONFS_ENDPOINT_REVMAP:

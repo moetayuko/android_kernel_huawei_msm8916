@@ -1,0 +1,19 @@
+/ {
+    huawei_audio_info {
+        compatible = "huawei,hw_audio_info";
+        product-identifier = "c8817e";
+        builtin-master-mic-exist;
+        hand_held_master_mic_strategy;
+        status = "ok";
+        aud_param_ver = "c8817e_audio_C06";
+        loud_speaker_master_mic_strategy;
+        product-btsco-nrec-adapt;
+    };
+};
+&spmi_bus {
+        qcom,pm8916@1 {
+            pm8916_tombak_dig: msm8x16_wcd_codec@f000{
+                qcom,msm-boost-voltage = <4800>;
+        };
+    };
+};

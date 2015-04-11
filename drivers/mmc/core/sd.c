@@ -27,6 +27,30 @@
 #include "sd.h"
 #include "sd_ops.h"
 
+
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+#include <linux/mmc/dsm_sdcard.h>
+struct dsm_sdcard_cmd_log dsm_sdcard_cmd_logs[] = 
+{
+	{"CMD8 : ",				0},
+	{"CMD55 : ",    		0},
+	{"ACMD41: ",			0},
+	{"CMD2_RESP0 : ",		0},
+	{"CMD2_RESP1 : ",		0},
+	{"CMD2_RESP2 : ",		0},
+	{"CMD2_RESP3 : ",		0},
+	{"CMD3 : ",				0},
+	{"CMD9_RESP0 : ",		0},
+	{"CMD9_RESP1 : ",		0},
+	{"CMD9_RESP2 : ",		0},
+	{"CMD9_RESP3 : ",		0},
+	{"CMD7 : ",				0},
+	{"Report Uevent : ",	0},
+};
+
+#endif
+
+
 #define UHS_SDR104_MIN_DTR	(100 * 1000 * 1000)
 #define UHS_DDR50_MIN_DTR	(50 * 1000 * 1000)
 #define UHS_SDR50_MIN_DTR	(50 * 1000 * 1000)
@@ -794,7 +818,9 @@ static const struct attribute_group *sd_attr_groups[] = {
 struct device_type sd_type = {
 	.groups = sd_attr_groups,
 };
-
+#ifdef CONFIG_HUAWEI_KERNEL
+#include <linux/of.h>
+#endif
 /*
  * Fetch CID from card.
  */
@@ -803,6 +829,9 @@ int mmc_sd_get_cid(struct mmc_host *host, u32 ocr, u32 *cid, u32 *rocr)
 	int err;
 	u32 max_current;
 	int retries = 10;
+#ifdef CONFIG_HUAWEI_KERNEL
+	struct device_node *UHSI_np = NULL;
+#endif
 
 try_again:
 	if (!retries) {
@@ -829,6 +858,20 @@ try_again:
 	if (!err)
 		ocr |= SD_OCR_CCS;
 
+	/*remove UHS-I mode of SD 3.0 because hardware do not support it.*/
+#ifdef CONFIG_HUAWEI_KERNEL
+	/*add UHS-I mode for 3.0 sdcard except MMC_CAP_UHS_SDR104,because cherry surport it*/
+	UHSI_np = of_find_compatible_node(NULL,NULL,"huawei,huawei-supply-uhsi");
+	if (NULL == UHSI_np)
+	{
+		host->caps &= ~(MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25 |
+					MMC_CAP_UHS_SDR50 | MMC_CAP_UHS_SDR104 | MMC_CAP_UHS_DDR50);
+	}
+	else
+	{
+		host->caps &= ~MMC_CAP_UHS_SDR104;
+	}
+#endif
 	/*
 	 * If the host supports one of UHS-I modes, request the card
 	 * to switch to 1.8V signaling level. If the card has failed
@@ -876,13 +919,43 @@ try_again:
 int mmc_sd_get_csd(struct mmc_host *host, struct mmc_card *card)
 {
 	int err;
-
+	
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+	int buff_len;
+	char *log_buff;
+#endif
 	/*
 	 * Fetch CSD from card.
 	 */
 	err = mmc_send_csd(card, card->raw_csd);
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+	if(!strcmp(mmc_hostname(host), "mmc1"))
+	{
+		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD9_R0].value = card->raw_csd[0];
+		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD9_R1].value = card->raw_csd[1];
+		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD9_R2].value = card->raw_csd[2];
+		 dsm_sdcard_cmd_logs[DSM_SDCARD_CMD9_R3].value = card->raw_csd[3];
+	}
+	
+	if (err)
+	{
+		if(-ENOMEDIUM != err && -ETIMEDOUT != err 
+		&& !strcmp(mmc_hostname(host), "mmc1") && !dsm_client_ocuppy(sdcard_dclient))
+		{
+			log_buff = dsm_sdcard_get_log(DSM_SDCARD_CMD9_R3,err);
+			buff_len = strlen(log_buff);
+			dsm_client_copy(sdcard_dclient,log_buff,buff_len + 1);
+			dsm_client_notify(sdcard_dclient, DSM_SDCARD_CMD9_RESP_ERR);
+
+		}
+	
+		return err;
+	}
+#else
 	if (err)
 		return err;
+#endif	
+
 
 	err = mmc_decode_csd(card);
 	if (err)
@@ -1245,12 +1318,18 @@ static int mmc_sd_resume(struct mmc_host *host)
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
 	retries = 5;
 	while (retries) {
+#ifdef CONFIG_HUAWEI_KERNEL
+		host->unused = 1;
+#endif
 		err = mmc_sd_init_card(host, host->ocr, host->card);
 
 		if (err) {
 			printk(KERN_ERR "%s: Re-init card rc = %d (retries = %d)\n",
 			       mmc_hostname(host), err, retries);
 			retries--;
+#ifdef CONFIG_HUAWEI_KERNEL
+			host->unused = 0;
+#endif
 			mmc_power_off(host);
 			usleep_range(5000, 5500);
 			mmc_power_up(host);
@@ -1391,9 +1470,15 @@ int mmc_attach_sd(struct mmc_host *host)
 #ifdef CONFIG_MMC_PARANOID_SD_INIT
 	retries = 5;
 	while (retries) {
+#ifdef CONFIG_HUAWEI_KERNEL
+		host->unused = 1;
+#endif
 		err = mmc_sd_init_card(host, host->ocr, NULL);
 		if (err) {
 			retries--;
+#ifdef CONFIG_HUAWEI_KERNEL
+			host->unused = 0;
+#endif
 			mmc_power_off(host);
 			usleep_range(5000, 5500);
 			mmc_power_up(host);
@@ -1437,4 +1522,42 @@ err:
 
 	return err;
 }
+
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+char *dsm_sdcard_get_log(int cmd,int err)
+{	
+	int i;
+	int ret = 0;
+	int buff_size = sizeof(g_dsm_log_sum);
+	char *dsm_log_buff = g_dsm_log_sum;
+	 
+	memset(g_dsm_log_sum,0,buff_size);
+	
+	ret = snprintf(dsm_log_buff,buff_size,"Err : %d\n",err);
+	dsm_log_buff += ret;
+	buff_size -= ret;
+	
+	for(i = 0; i <= cmd; i++)
+	{
+		
+		ret = snprintf(dsm_log_buff,buff_size,
+		"%s%08x\n",dsm_sdcard_cmd_logs[i].log,dsm_sdcard_cmd_logs[i].value);
+		if(ret > buff_size -1)
+		{
+			printk(KERN_ERR "Buff size is not enough\n");
+			printk(KERN_ERR "%s",g_dsm_log_sum);
+			return g_dsm_log_sum;
+		}
+		
+		dsm_log_buff += ret;
+		buff_size -= ret;
+	}
+
+	pr_debug("DSM_DEBUG %s",g_dsm_log_sum);
+	
+	return g_dsm_log_sum;
+		
+}
+EXPORT_SYMBOL(dsm_sdcard_get_log);
+#endif
 

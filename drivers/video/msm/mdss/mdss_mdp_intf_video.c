@@ -18,12 +18,15 @@
 #include <linux/dma-mapping.h>
 #include <linux/memblock.h>
 
+#include <mdss.h>
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
 #include "mdss_panel.h"
 #include "mdss_debug.h"
 #include "mdss_mdp_trace.h"
 
+/* add log on panel resume and suspend module */
+#include <linux/hw_lcd_common.h>
 /* wait for at least 2 vsyncs for lowest refresh rate (24hz) */
 #define VSYNC_TIMEOUT_US 100000
 
@@ -316,6 +319,10 @@ static int mdss_mdp_video_stop(struct mdss_mdp_ctl *ctl)
 	}
 	MDSS_XLOG(ctl->num, ctl->vsync_cnt);
 	if (ctx->timegen_en) {
+	/*cancle the esd delay work*/
+	#ifdef CONFIG_HUAWEI_LCD
+		mdss_dsi_status_check_ctl(ctl->mfd,false);
+	#endif
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_BLANK, NULL);
 		if (rc == -EBUSY) {
 			pr_debug("intf #%d busy don't turn off\n",
@@ -359,6 +366,10 @@ static int mdss_mdp_video_stop(struct mdss_mdp_ctl *ctl)
 	ctx->ref_cnt--;
 	ctl->priv_data = NULL;
 
+/* add log on panel resume and suspend module */
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("exit %s\n",__func__);
+#endif
 	return 0;
 }
 
@@ -470,6 +481,8 @@ static int mdss_mdp_video_wait4comp(struct mdss_mdp_ctl *ctl, void *arg)
 	return rc;
 }
 
+extern unsigned int cpufreq_get(unsigned int cpu);
+extern unsigned long mdss_mdp_get_clk_rate(u32 clk_idx);
 static void mdss_mdp_video_underrun_intr_done(void *arg)
 {
 	struct mdss_mdp_ctl *ctl = arg;
@@ -482,6 +495,8 @@ static void mdss_mdp_video_underrun_intr_done(void *arg)
 	trace_mdp_video_underrun_done(ctl->num, ctl->underrun_cnt);
 	pr_debug("display underrun detected for ctl=%d count=%d\n", ctl->num,
 			ctl->underrun_cnt);
+	/* report underrun error to dsm */
+	mdp_underrun_dsm_report(ctl->num,ctl->underrun_cnt,cpufreq_get(0),mdss_mdp_get_clk_rate(MDSS_CLK_MDP_SRC),mdss_mdp_get_clk_rate(MDSS_CLK_AXI),mdss_mdp_get_clk_rate(MDSS_CLK_AHB));
 }
 
 static int mdss_mdp_video_vfp_fps_update(struct mdss_mdp_ctl *ctl, int new_fps)
@@ -721,6 +736,10 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		ctx->timegen_en = true;
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_ON, NULL);
 		WARN(rc, "intf %d panel on error (%d)\n", ctl->intf_num, rc);
+	/*scheduled the esd delay work*/
+	#ifdef CONFIG_HUAWEI_LCD
+		mdss_dsi_status_check_ctl(ctl->mfd,true);
+	#endif
 	}
 
 	return 0;
@@ -788,6 +807,10 @@ int mdss_mdp_video_start(struct mdss_mdp_ctl *ctl)
 	u32 dst_bpp;
 	int i;
 
+/* add log on panel resume and suspend module */
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("start %s\n",__func__);
+#endif
 	mdata = ctl->mdata;
 	pinfo = &ctl->panel_data->panel_info;
 

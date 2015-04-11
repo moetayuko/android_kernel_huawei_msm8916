@@ -108,6 +108,9 @@ void msm_pm_set_l2_flush_flag(enum msm_pm_l2_scm_flag flag);
 void lpm_cpu_hotplug_enter(unsigned int cpu);
 s32 msm_cpuidle_get_deep_idle_latency(void);
 int msm_pm_collapse(unsigned long unused);
+#ifdef  CONFIG_HUAWEI_KERNEL
+int msm_pm_regulator_print(void);
+#endif
 #else
 static inline void msm_pm_set_rpm_wakeup_irq(unsigned int irq) {}
 static inline int msm_pm_wait_cpu_shutdown(unsigned int cpu) { return 0; }

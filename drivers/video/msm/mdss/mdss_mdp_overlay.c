@@ -35,6 +35,8 @@
 #include "mdss_fb.h"
 #include "mdss_mdp.h"
 #include "mdss_mdp_rotator.h"
+/* add log on panel resume and suspend module */
+#include <linux/hw_lcd_common.h>
 
 #define VSYNC_PERIOD 16
 #define BORDERFILL_NDX	0x0BF000BF
@@ -3128,6 +3130,10 @@ static int mdss_mdp_overlay_on(struct msm_fb_data_type *mfd)
 	struct mdss_overlay_private *mdp5_data;
 	struct mdss_mdp_ctl *ctl = NULL;
 
+/* add log on panel resume and suspend module */
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("start %s\n",__func__);
+#endif
 	if (!mfd)
 		return -ENODEV;
 
@@ -3210,6 +3216,10 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 	}
 
 	mutex_lock(&mdp5_data->ov_lock);
+#ifdef CONFIG_HUAWEI_LCD
+	if (atomic_dec_return(&ov_active_panels) == 0)
+		mdss_mdp_rotator_release_all();
+#endif
 	rc = mdss_mdp_ctl_stop(mdp5_data->ctl);
 	if (rc == 0) {
 		mutex_lock(&mdp5_data->list_lock);
@@ -3224,14 +3234,20 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 			mdp5_data->ctl = NULL;
 		}
 
+#ifndef CONFIG_HUAWEI_LCD
 		if (atomic_dec_return(&ov_active_panels) == 0)
 			mdss_mdp_rotator_release_all();
+#endif
 
 		rc = pm_runtime_put(&mfd->pdev->dev);
 		if (rc)
 			pr_err("unable to suspend w/pm_runtime_put (%d)\n", rc);
 	}
 	mutex_unlock(&mdp5_data->ov_lock);
+/* add log on panel resume and suspend module */
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("exit %s\n",__func__);
+#endif
 
 	return rc;
 }
