@@ -1428,14 +1428,8 @@ extern char *saved_command_line;
 //command line can be updated by fastboot commond "oem log-ctr enable" 
 static bool is_serial_log_enable(void)
 {
-    if (strstr(saved_command_line, "console=ttyHSL0,115200,n8") != NULL) {
-        pr_info("serial log enable \n");
-        return true;
-    }
-
-    pr_info("serial log disable \n");
-
-    return false;
+    pr_info("serial log enable \n");
+    return true;
 }
 
 static void msm_hsl_console_putchar(struct uart_port *port, int ch)
