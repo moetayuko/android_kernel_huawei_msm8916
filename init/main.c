@@ -91,7 +91,6 @@
 #include <linux/huawei_boot_log.h>
 #include <linux/kallsyms.h>
 #endif
-#include <linux/log_jank.h>
 
 void *boot_log_virt = NULL;
 
@@ -991,7 +990,6 @@ static noinline void __init kernel_init_freeable(void)
     this_cpu = smp_processor_id();
     t = cpu_clock(this_cpu);
     do_div(t,1000000);
-    LOG_JANK_V(JL_BOOT_PROGRESS_KERNEL_END,"JL_BOOT_PROGRESS_KERNEL_END#T:%5lu \n",(unsigned long) t);
 	/* Open the /dev/console on the rootfs, this should never fail */
 	if (sys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0)
 		pr_err("Warning: unable to open an initial console.\n");
