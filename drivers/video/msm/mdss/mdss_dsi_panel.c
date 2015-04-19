@@ -26,7 +26,7 @@
 
 #include <misc/app_info.h>
 #include <linux/hw_lcd_common.h>
-#include <hw_lcd_debug.h>
+#include "hw_lcd_debug.h"
 #ifdef CONFIG_HUAWEI_LCD
 int lcd_debug_mask = LCD_INFO;
 #define INVERSION_OFF 0
