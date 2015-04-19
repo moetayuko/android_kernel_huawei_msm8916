@@ -26,7 +26,7 @@
 
 #include <misc/app_info.h>
 #include <linux/hw_lcd_common.h>
-#include <hw_lcd_debug.h>
+#include "hw_lcd_debug.h"
 extern int get_offline_cpu(void);
 extern unsigned int cpufreq_get(unsigned int cpu);
 #ifdef CONFIG_HUAWEI_LCD

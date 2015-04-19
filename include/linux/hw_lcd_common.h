@@ -16,7 +16,7 @@
 #ifndef HW_LCD_COMMON_H
 #define HW_LCD_COMMON_H
 
-#include "mdss_dsi.h"
+#include "../../drivers/video/msm/mdss/mdss_dsi.h"
 #include <linux/dsm_pub.h>
 
 /* Add dynamic_log interface */

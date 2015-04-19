@@ -260,7 +260,7 @@ static int kionix_strtok(const char *buf, size_t count, char **token, const int 
 	unsigned int num_ptr = 0, num_nr = 0, num_neg = 0;
 	int i = 0, start = 0, end = (int)count;
 
-	memcpy(buf2, buf,sizeof(buf));
+	strcpy(buf2, buf);
 
 	/* We need to breakup the string into separate chunks in order for kstrtoint
 	 * or strict_strtol to parse them without returning an error. Stop when the end of
