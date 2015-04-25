@@ -609,11 +609,10 @@ int nfcc_wake(int level, struct file *filp)
 		} while ((wake_status & NCI_WAKE)
 				&& (time_taken < WAKE_TIMEOUT));
 		/* Restore original NFCC slave I2C address */
-		if (time_taken >= WAKE_TIMEOUT) {
+		if (time_taken >= WAKE_TIMEOUT)
 			dev_err(&qca199x_dev->client->dev,
 			"nfc_ioctl_nfcc_version : TIMED OUT to get WAKEUP bit\n");
-			r = -EIO;
-		}
+
 		qca199x_dev->client->addr = curr_addr;
 		if (r != sizeof(wake_status))
 			return -EMSGSIZE;
@@ -696,12 +695,12 @@ int nfc_ioctl_power_states(struct file *filp, unsigned int cmd,
 		msleep(20);
 	} else if (arg == 4) {
 		mutex_lock(&qca199x_dev->read_mutex);
-		r = nfcc_wake(NFCC_WAKE, filp);
+		nfcc_wake(NFCC_WAKE, filp);
 		dev_dbg(&qca199x_dev->client->dev, "nfcc wake: %s: info: %p\n",
 			__func__, qca199x_dev);
 		mutex_unlock(&qca199x_dev->read_mutex);
 	} else if (arg == 5) {
-		r = nfcc_wake(NFCC_SLEEP, filp);
+		nfcc_wake(NFCC_SLEEP, filp);
 	} else {
 		r = -ENOIOCTLCMD;
 	}
@@ -944,7 +943,7 @@ static long nfc_ioctl(struct file *pfile, unsigned int cmd,
 	switch (cmd) {
 
 	case NFC_SET_PWR:
-		r = nfc_ioctl_power_states(pfile, cmd, arg);
+		nfc_ioctl_power_states(pfile, cmd, arg);
 		break;
 	case NFCC_MODE:
 		nfc_ioctl_nfcc_mode(pfile, cmd, arg);
