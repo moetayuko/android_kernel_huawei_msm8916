@@ -992,9 +992,8 @@ static int lookup_soc_ocv(struct qpnp_bms_chip *chip, int ocv_uv, int batt_temp)
 
 	if (chip->batt_data->ibat_acc_lut) {
 		/* Apply  ACC logic only if we discharging */
-		/*remove some code */
-		if (!is_battery_charging(chip) && chip->current_now > 0){
-		/*remove some code */
+		if (!is_battery_charging(chip) && chip->current_now > 0) {
+
 			iavg_ma = calculate_uuc_iavg(chip);
 
 			fcc = interpolate_fcc(chip->batt_data->fcc_temp_lut,
