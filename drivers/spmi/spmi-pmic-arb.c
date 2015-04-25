@@ -1236,6 +1236,7 @@ static struct platform_driver spmi_pmic_arb_driver = {
 		.of_match_table = spmi_pmic_arb_match_table,
 	},
 };
+
 static int __init spmi_pmic_arb_init(void)
 {
 	return platform_driver_register(&spmi_pmic_arb_driver);
