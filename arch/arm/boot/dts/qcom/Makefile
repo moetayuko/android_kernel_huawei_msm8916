@@ -35,31 +35,30 @@ ifeq ($(CONFIG_HUAWEI_KERNEL),y)
 #change the name of file huawei_cherry_tl00_va.dtb to huawei_cherry_cl20_va.dtb
 #change the name of file huawei_ulc02_va.dtb to huawei_ulc02_ul01_va.dtb
 #add huawei_cherry_cl10_vd.dtb huawei_cherry_cl20_vd.dtb huawei_cherry_l04_va.dtb huawei_g760_l01_vc.dtb huawei_g760_l01_vd.dtb huawei_g760_l02.dtb huawei_g760_l03_vb.dtb huawei_g760_l11.dtb huawei_g760_tl_vc.dtb huawei_g760_ul20_va.dtb huawei_g760_ul20_vb.dtb huawei_y635_cl_va.dtb huawei_y635_cl_va_512M.dtb huawei_y635_l01_va.dtb huawei_y635_l02_va.dtb huawei_y635_l03_va.dtb huawei_y635_l11_va.dtb huawei_y635_l21_va.dtb huawei_y635_tl_va.dtb huawei_y635_tl_va_512M.dtb by dianlujitao
-dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-skuh.dtb \
+dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-skuh.dtb
+ifeq ($(CONFIG_SUPPORT_C8817D),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
 	huawei_c8817d_va.dtb \
-	huawei_c8817e_va.dtb \
-	huawei_g611_ul_va.dtb \
-	huawei_g619_tl_va.dtb \
-	huawei_g620s_ul_va.dtb \
-	huawei_g622_cl_va.dtb \
-	huawei_g660s_cl_va.dtb \
-	huawei_g660s_tl_va.dtb \
-	huawei_g660s_ul_va.dtb \
-	huawei_g760_l01_va.dtb \
-	huawei_g760_tl_va.dtb \
-	huawei_g760_ul_va.dtb \
-	huawei_g621_tl00_vb.dtb \
-	huawei_y550_l01_va.dtb \
-	huawei_y550_l02_va.dtb \
-	huawei_y550_l03_va.dtb \
-	huawei_cherry_cl10_va.dtb \
-	huawei_cherry_cl20_va.dtb \
-	huawei_cherry_cl10_vb.dtb \
-	huawei_cherry_cl20_vb.dtb \
-	huawei_cherry_cl10_vc.dtb \
-	huawei_cherry_cl20_vc.dtb \
 	huawei_c8817d_vb.dtb \
+	huawei_c8817d_vc.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_C8817E),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_c8817e_va.dtb \
 	huawei_c8817e_vb.dtb \
+	huawei_c8817e_vc.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_G611),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_g611_ul_va.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_G619),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_g619_tl_va.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_G620S),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_g620s_ul_va.dtb \
 	huawei_g620s_l01_va.dtb \
 	huawei_g620s_l02_va.dtb \
 	huawei_g620s_l03_va.dtb \
@@ -67,28 +66,34 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-skuh.dtb \
 	huawei_g620s_l02_vb.dtb \
 	huawei_g620s_l03_vb.dtb \
 	huawei_g620s_ul_vb.dtb \
-	huawei_g622_cl_vb.dtb \
+	huawei_g620s_ul_vc.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_G621),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_g621_tl00_vb.dtb \
+	huawei_g621_tl.dtb \
+	huawei_g621_tl_vc.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_G622),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_g622_cl_va.dtb \
+	huawei_g622_cl_vb.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_G660S),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_g660s_cl_va.dtb \
+	huawei_g660s_tl_va.dtb \
+	huawei_g660s_ul_va.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_G760),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_g760_l01_va.dtb \
+	huawei_g760_tl_va.dtb \
+	huawei_g760_ul_va.dtb \
 	huawei_g760_l01_vb.dtb \
 	huawei_g760_tl_vb.dtb \
 	huawei_g760_ul_vb.dtb \
 	huawei_g760_l03.dtb \
-	huawei_y550_l01_vb.dtb \
-	huawei_y550_l02_vb.dtb \
-	huawei_y550_l03_vb.dtb \
-	huawei_y550_l01_vc.dtb \
-	huawei_y550_l02_vc.dtb \
-	huawei_y550_l03_vc.dtb \
-	huawei_g621_tl_vc.dtb \
-	huawei_c8817d_vc.dtb \
-	huawei_c8817e_vc.dtb \
-	huawei_g620s_ul_vc.dtb \
-	huawei_ulc02_ul01_va.dtb \
-	huawei_ulc02_cl_va.dtb \
-	huawei_ulc02_tl_va.dtb \
-	huawei_ulc02_ul02_va.dtb \
-	huawei_cherry_cl10_vd.dtb \
-	huawei_cherry_cl20_vd.dtb \
-	huawei_cherry_l04_va.dtb \
 	huawei_g760_l01_vc.dtb \
 	huawei_g760_l01_vd.dtb \
 	huawei_g760_l02.dtb \
@@ -96,7 +101,40 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-skuh.dtb \
 	huawei_g760_l11.dtb \
 	huawei_g760_tl_vc.dtb \
 	huawei_g760_ul20_va.dtb \
-	huawei_g760_ul20_vb.dtb \
+	huawei_g760_ul20_vb.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_Y550),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_y550_l01_va.dtb \
+	huawei_y550_l02_va.dtb \
+	huawei_y550_l03_va.dtb \
+	huawei_y550_l01_vb.dtb \
+	huawei_y550_l02_vb.dtb \
+	huawei_y550_l03_vb.dtb \
+	huawei_y550_l01_vc.dtb \
+	huawei_y550_l02_vc.dtb \
+	huawei_y550_l03_vc.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_CHERRY_CL10),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_cherry_cl10_va.dtb \
+	huawei_cherry_cl10_vb.dtb \
+	huawei_cherry_cl10_vc.dtb \
+	huawei_cherry_cl10_vd.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_CHERRY_CL20),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_cherry_cl20_va.dtb \
+	huawei_cherry_cl20_vb.dtb \
+	huawei_cherry_cl20_vc.dtb \
+	huawei_cherry_cl20_vd.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_CHERRY_L04),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_cherry_l04_va.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_Y635),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
 	huawei_y635_cl_va.dtb \
 	huawei_y635_cl_va_512M.dtb \
 	huawei_y635_l01_va.dtb \
@@ -106,6 +144,14 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-skuh.dtb \
 	huawei_y635_l21_va.dtb \
 	huawei_y635_tl_va.dtb \
 	huawei_y635_tl_va_512M.dtb
+endif
+ifeq ($(CONFIG_SUPPORT_ULC02),y)
+dtb-$(CONFIG_ARCH_MSM8916) += \
+	huawei_ulc02_ul01_va.dtb \
+	huawei_ulc02_cl_va.dtb \
+	huawei_ulc02_tl_va.dtb \
+	huawei_ulc02_ul02_va.dtb
+endif
 else
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8916-rumi.dtb \
