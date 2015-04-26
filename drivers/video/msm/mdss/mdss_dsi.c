@@ -27,10 +27,9 @@
 #include "mdss_dsi.h"
 #include "mdss_debug.h"
 #include <linux/hw_lcd_common.h>
+
 static int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 					bool active);
-extern int get_offline_cpu(void);
-extern unsigned int cpufreq_get(unsigned int cpu);
 static int mdss_dsi_regulator_init(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -700,7 +699,7 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	struct mdss_panel_info *pinfo;
 	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	unsigned long timeout = jiffies;
+
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
@@ -755,10 +754,6 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	__mdss_dsi_ctrl_setup(pdata);
 	mdss_dsi_sw_reset(pdata);
 	mdss_dsi_host_init(pdata);
-	/* add for timeout print log */
-
-	LCD_LOG_INFO("%s: dsi_on_time = %u,offlinecpu = %d,curfreq = %d\n",
-			__func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
 	/*
 	 * Issue hardware reset line after enabling the DSI clocks and data
 	 * data lanes for LP11 init

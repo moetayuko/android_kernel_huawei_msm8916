@@ -27,8 +27,6 @@
 #include <misc/app_info.h>
 #include <linux/hw_lcd_common.h>
 #include "hw_lcd_debug.h"
-extern int get_offline_cpu(void);
-extern unsigned int cpufreq_get(unsigned int cpu);
 #ifdef CONFIG_HUAWEI_LCD
 int lcd_debug_mask = LCD_INFO;
 #define INVERSION_OFF 0
@@ -236,7 +234,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	struct mdss_panel_info *pinfo = NULL;
 	int i, rc = 0;
-	unsigned long timeout = jiffies;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -321,11 +318,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		LCD_MDELAY(10);
 	#endif
 	}
-	/* add for timeout print log */
-
-	LCD_LOG_INFO("%s: panel reset time = %u,offlinecpu = %d,curfreq = %d\n",
-		__func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
-
 	return rc;
 }
 
@@ -501,7 +493,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 #ifdef CONFIG_HUAWEI_LCD
 	struct dsi_panel_cmds cmds;
 #endif
-	unsigned long timeout = jiffies;
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
@@ -551,9 +542,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 #endif
 
 	pr_debug("%s:-\n", __func__);
-	/* add for timeout print log */
-	LCD_LOG_INFO("%s: panel_on_time = %u,offlinecpu = %d,curfreq = %d\n",
-			__func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
 	return 0;
 }
 

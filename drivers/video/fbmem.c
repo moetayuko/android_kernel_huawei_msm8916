@@ -1067,7 +1067,6 @@ fb_blank(struct fb_info *info, int blank)
 {	
 	struct fb_event event;
 	int ret = -EINVAL, early_ret;
-	unsigned long timeout ;
 #ifdef CONFIG_HUAWEI_LCD
 	LCD_LOG_INFO("Enter %s, blank_mode = [%d].\n",__func__,blank);
 #endif
@@ -1079,12 +1078,8 @@ fb_blank(struct fb_info *info, int blank)
 	event.data = &blank;
 
 	early_ret = fb_notifier_call_chain(FB_EARLY_EVENT_BLANK, &event);
-	timeout = jiffies ;
 	if (info->fbops->fb_blank)
  		ret = info->fbops->fb_blank(blank, info);
-	/* add for timeout print log */
-	LCD_LOG_INFO("%s: fb blank time = %u,offlinecpu = %d,curfreq = %d\n",
-			__func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
 	if (!ret)
 		fb_notifier_call_chain(FB_EVENT_BLANK, &event);
 	else {

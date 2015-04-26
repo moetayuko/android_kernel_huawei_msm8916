@@ -109,10 +109,6 @@ u32 last_cabc_setting = false;
 static int mdss_fb_send_panel_event(struct msm_fb_data_type *mfd,
 					int event, void *arg);
 static void mdss_fb_set_mdp_sync_pt_threshold(struct msm_fb_data_type *mfd);
-#ifdef CONFIG_HUAWEI_LCD
-extern int get_offline_cpu(void);
-extern unsigned int cpufreq_get(unsigned int cpu);
-#endif
 void mdss_fb_no_update_notify_timer_cb(unsigned long data)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)data;
@@ -230,16 +226,9 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 
 	if (!IS_CALIB_MODE_BL(mfd) && (!mfd->ext_bl_ctrl || !value ||
 							!mfd->bl_level)) {
-		unsigned long timeout = jiffies + HZ/10;
 		mutex_lock(&mfd->bl_lock);
 		mdss_fb_set_backlight(mfd, bl_lvl);
 		mutex_unlock(&mfd->bl_lock);
-	       /* add for timeout print log */
-		if(!time_before(jiffies, timeout)){
-			LCD_LOG_INFO("%s: set backlight time = %u,offlinecpu = %d,curfreq = %d\n",
-			__func__,jiffies_to_msecs(jiffies-timeout+HZ/10),get_offline_cpu(),cpufreq_get(0));
-		}
-
 	}
 }
 
@@ -1037,7 +1026,6 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	struct mdss_panel_data *pdata;
 	int (*update_ad_input)(struct msm_fb_data_type *mfd);
 	u32 temp = bkl_lvl;
-	unsigned long timeout;
 
 	if (((!mfd->panel_power_on && mfd->dcm_state != DCM_ENTER)
 		|| !mfd->bl_updated) && !IS_CALIB_MODE_BL(mfd)) {
@@ -1079,12 +1067,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 			time_to_tm(lcd_pwr_status.tvl_backlight.tv_sec, 0, &lcd_pwr_status.tm_backlight);
 		}
 	#endif
-		timeout = jiffies + HZ/10 ;
 		pdata->set_backlight(pdata, temp);
-		if(!time_before(jiffies, timeout)){
-			LCD_LOG_INFO("%s: set backlight time = %u,offlinecpu = %d,curfreq = %d\n",
-			__func__,jiffies_to_msecs(jiffies-timeout+HZ/10),get_offline_cpu(),cpufreq_get(0));
-		}
 	/*schedule esd delay work again*/
 	#ifdef CONFIG_HUAWEI_LCD
 		mdss_dsi_status_check_ctl(mfd,true);
@@ -1116,7 +1099,6 @@ void mdss_fb_update_backlight_wq_handler(struct work_struct *work)
 
 		pdata = dev_get_platdata(&mfd->pdev->dev);
 		if ((pdata) && (pdata->set_backlight)) {
-	              unsigned long timeout = jiffies;
 			mfd->bl_level = mfd->unset_bl_level;
 			pdata->set_backlight(pdata, mfd->bl_level);
 			mfd->bl_level_scaled = mfd->unset_bl_level;
@@ -1124,8 +1106,6 @@ void mdss_fb_update_backlight_wq_handler(struct work_struct *work)
 			lcd_pwr_status.lcd_dcm_pwr_status |= BIT(3);
 			do_gettimeofday(&lcd_pwr_status.tvl_backlight);
 			time_to_tm(lcd_pwr_status.tvl_backlight.tv_sec, 0, &lcd_pwr_status.tm_backlight);
-                     LCD_LOG_INFO("%s: set backlight time = %u,offlinecpu = %d,curfreq = %d\n",
-			 __func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
 		}
 	}
 	mfd->bl_updated = 1;
