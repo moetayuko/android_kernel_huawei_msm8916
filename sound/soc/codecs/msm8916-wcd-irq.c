@@ -27,7 +27,6 @@
 #include "msm8x16-wcd.h"
 #include "msm8916-wcd-irq.h"
 #include "msm8x16_wcd_registers.h"
-#include <sound/hw_audio_log.h>
 
 #define MAX_NUM_IRQS 14
 #define NUM_IRQ_REGS 2
@@ -100,7 +99,7 @@ struct wcd9xxx_spmi_map map;
 
 void wcd9xxx_spmi_enable_irq(int irq)
 {
-	ad_logd("%s: irqno =%d\n", __func__, irq);
+	pr_debug("%s: irqno =%d\n", __func__, irq);
 	if ((irq >= 0) && (irq <= 7)) {
 		snd_soc_update_bits(map.codec,
 				MSM8X16_WCD_A_DIGITAL_INT_EN_CLR,
@@ -129,7 +128,7 @@ void wcd9xxx_spmi_enable_irq(int irq)
 
 void wcd9xxx_spmi_disable_irq(int irq)
 {
-	ad_logd("%s: irqno =%d\n", __func__, irq);
+	pr_debug("%s: irqno =%d\n", __func__, irq);
 	if ((irq >= 0) && (irq <= 7)) {
 		snd_soc_update_bits(map.codec,
 				MSM8X16_WCD_A_DIGITAL_INT_EN_SET,
@@ -171,12 +170,12 @@ int wcd9xxx_spmi_request_irq(int irq, irq_handler_t handler,
 				| IRQF_ONESHOT,
 				name, priv);
 		if (rc < 0) {
-			ad_dev_loge(&map.spmi[BIT_BYTE(irq)]->dev,
+			dev_err(&map.spmi[BIT_BYTE(irq)]->dev,
 				"Can't request %d IRQ\n", irq);
 			return rc;
 		}
 
-	ad_dev_logd(&map.spmi[BIT_BYTE(irq)]->dev,
+	dev_dbg(&map.spmi[BIT_BYTE(irq)]->dev,
 			"irq %d linuxIRQ: %d\n", irq, map.linuxirq[irq]);
 	map.mask[BIT_BYTE(irq)] &= ~BYTE_BIT_MASK(irq);
 	map.handler[irq] = handler;
@@ -214,7 +213,7 @@ static irqreturn_t wcd9xxx_spmi_irq_handler(int linux_irq, void *data)
 	u8 status[NUM_IRQ_REGS] = {0};
 
 	if (unlikely(wcd9xxx_spmi_lock_sleep() == false)) {
-		ad_loge("Failed to hold suspend\n");
+		pr_err("Failed to hold suspend\n");
 		return IRQ_NONE;
 	}
 
@@ -263,14 +262,14 @@ int wcd9xxx_spmi_suspend(pm_message_t pmesg)
 {
 	int ret = 0;
 
-	ad_logd("%s: enter\n", __func__);
+	pr_debug("%s: enter\n", __func__);
 	/*
 	 * pm_qos_update_request() can be called after this suspend chain call
 	 * started. thus suspend can be called while lock is being held
 	 */
 	mutex_lock(&map.pm_lock);
 	if (map.pm_state == WCD9XXX_PM_SLEEPABLE) {
-		ad_logd("%s: suspending system, state %d, wlock %d\n",
+		pr_debug("%s: suspending system, state %d, wlock %d\n",
 			 __func__, map.pm_state,
 			 map.wlock_holders);
 		map.pm_state = WCD9XXX_PM_ASLEEP;
@@ -279,7 +278,7 @@ int wcd9xxx_spmi_suspend(pm_message_t pmesg)
 		 * unlock to wait for pm_state == WCD9XXX_PM_SLEEPABLE
 		 * then set to WCD9XXX_PM_ASLEEP
 		 */
-		ad_logd("%s: waiting to suspend system, state %d, wlock %d\n",
+		pr_debug("%s: waiting to suspend system, state %d, wlock %d\n",
 			 __func__, map.pm_state,
 			 map.wlock_holders);
 		mutex_unlock(&map.pm_lock);
@@ -289,18 +288,18 @@ int wcd9xxx_spmi_suspend(pm_message_t pmesg)
 							WCD9XXX_PM_ASLEEP) ==
 							WCD9XXX_PM_SLEEPABLE,
 							HZ))) {
-			ad_logd("%s: suspend failed state %d, wlock %d\n",
+			pr_debug("%s: suspend failed state %d, wlock %d\n",
 				 __func__, map.pm_state,
 				 map.wlock_holders);
 			ret = -EBUSY;
 		} else {
-			ad_logd("%s: done, state %d, wlock %d\n", __func__,
+			pr_debug("%s: done, state %d, wlock %d\n", __func__,
 				 map.pm_state,
 				 map.wlock_holders);
 		}
 		mutex_lock(&map.pm_lock);
 	} else if (map.pm_state == WCD9XXX_PM_ASLEEP) {
-		ad_logw("%s: system is already suspended, state %d, wlock %dn",
+		pr_warn("%s: system is already suspended, state %d, wlock %dn",
 			__func__, map.pm_state,
 			map.wlock_holders);
 	}
@@ -314,15 +313,15 @@ int wcd9xxx_spmi_resume()
 {
 	int ret = 0;
 
-	ad_logd("%s: enter\n", __func__);
+	pr_debug("%s: enter\n", __func__);
 	mutex_lock(&map.pm_lock);
 	if (map.pm_state == WCD9XXX_PM_ASLEEP) {
-		ad_logd("%s: resuming system, state %d, wlock %d\n", __func__,
+		pr_debug("%s: resuming system, state %d, wlock %d\n", __func__,
 				map.pm_state,
 				map.wlock_holders);
 		map.pm_state = WCD9XXX_PM_SLEEPABLE;
 	} else {
-		ad_logw("%s: system is already awake, state %d wlock %d\n",
+		pr_warn("%s: system is already awake, state %d wlock %d\n",
 				__func__, map.pm_state,
 				map.wlock_holders);
 	}
@@ -349,7 +348,7 @@ bool wcd9xxx_spmi_lock_sleep()
 	 */
 	mutex_lock(&map.pm_lock);
 	if (map.wlock_holders++ == 0) {
-		ad_logd("%s: holding wake lock\n", __func__);
+		pr_debug("%s: holding wake lock\n", __func__);
 		pm_qos_update_request(&map.pm_qos_req,
 				      msm_cpuidle_get_deep_idle_latency());
 /* TestCode to fix the headset irq cannot trigger after the phone asleep */
@@ -358,7 +357,7 @@ bool wcd9xxx_spmi_lock_sleep()
 #endif
 	}
 	mutex_unlock(&map.pm_lock);
-	ad_logd("%s: wake lock counter %d\n", __func__,
+	pr_debug("%s: wake lock counter %d\n", __func__,
 			map.wlock_holders);
 
 	if (!wait_event_timeout(map.pm_wq,
@@ -372,7 +371,7 @@ bool wcd9xxx_spmi_lock_sleep()
 						 WCD9XXX_PM_AWAKE)),
 					msecs_to_jiffies(
 					WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS))) {
-		ad_logw("%s: system didn't resume within %dms, s %d, w %d\n",
+		pr_warn("%s: system didn't resume within %dms, s %d, w %d\n",
 			__func__,
 			WCD9XXX_SYSTEM_RESUME_TIMEOUT_MS, map.pm_state,
 			map.wlock_holders);
@@ -388,7 +387,7 @@ void wcd9xxx_spmi_unlock_sleep()
 {
 	mutex_lock(&map.pm_lock);
 	if (--map.wlock_holders == 0) {
-		ad_logd("%s: releasing wake lock pm_state %d -> %d\n",
+		pr_debug("%s: releasing wake lock pm_state %d -> %d\n",
 			 __func__, map.pm_state, WCD9XXX_PM_SLEEPABLE);
 		/*
 		 * if wcd9xxx_spmi_lock_sleep failed, pm_state would be still
@@ -404,7 +403,7 @@ void wcd9xxx_spmi_unlock_sleep()
 #endif
 	}
 	mutex_unlock(&map.pm_lock);
-	ad_logd("%s: wake lock counter %d\n", __func__,
+	pr_debug("%s: wake lock counter %d\n", __func__,
 			map.wlock_holders);
 	wake_up_all(&map.pm_wq);
 }

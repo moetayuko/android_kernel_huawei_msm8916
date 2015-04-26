@@ -18,7 +18,6 @@
 #include <linux/of.h>
 
 #include <sound/hw_audio_info.h>
-#include <sound/hw_audio_log.h>
 
 static struct dsm_dev audio_dsm_info = 
 {
@@ -130,127 +129,10 @@ static ssize_t audiopara_version_show(struct device_driver *driver, char *buf)
 }
 DRIVER_ATTR(aud_param_ver, 0444, audiopara_version_show, NULL);
 
-/* Default audio log level */
-int audio_log_level = AUDIO_LOG_LEVEL_INFO;
-
-/**
-* audio_property - Product specified audio properties
-*/
-static ssize_t audio_log_level_show(struct device_driver *driver, char *buf)
-{
-    char level_char = ' ';
-
-    if(NULL == buf)
-    {
-        ad_loge("%s get NULL argument\n", __func__);
-        return 0;
-    }
-
-    switch(audio_log_level)
-    {
-        case AUDIO_LOG_LEVEL_VERBOSE:
-            level_char = 'V';
-            break;
-        case AUDIO_LOG_LEVEL_DEBUG:
-            level_char = 'D';
-            break;
-        case AUDIO_LOG_LEVEL_INFO:
-            level_char = 'I';
-            break;
-        case AUDIO_LOG_LEVEL_NOTICE:
-            level_char = 'N';
-            break;
-        case AUDIO_LOG_LEVEL_WARNING:
-            level_char = 'W';
-            break;
-        case AUDIO_LOG_LEVEL_ERROR:
-            level_char = 'E';
-            break;
-        case AUDIO_LOG_LEVEL_NONE:
-            level_char = '0';
-            break;
-        default:
-            level_char = ' ';
-            ad_loge("Unkown audio log level\n");
-            break;
-    }
-
-    ad_logi("Current log level is %d:%c\n", audio_log_level, level_char);
-    
-    /* Those logs are for log level confirm and test */
-    ad_logv("This is verbose log\n");
-    ad_logd("This is debug log\n");
-    ad_logi("This is info log\n");
-    ad_logn("This is notice log\n");
-    ad_logw("This is warning log\n");
-    ad_loge("This is error log\n");
-    return snprintf(buf, PAGE_SIZE, "%d:%c", audio_log_level, level_char);
-}
-
-/**
-* audio_property - Product specified audio properties
-*/
-static ssize_t audio_log_level_store(struct device_driver *driver, const char *buf, size_t count)
-{
-    char level_char;
-    int new_log_level = audio_log_level;
-    
-    if((NULL == buf) || (count < 1))
-    {
-        ad_loge("%s get illegal arguments\n", __func__);
-        return -EINVAL;
-    }
-    
-    level_char = buf[0];
-    ad_logi("Get audio log level char %c\n", level_char);
-
-    switch(level_char)
-    {
-        case 'V':
-            new_log_level = AUDIO_LOG_LEVEL_VERBOSE;
-            break;
-        case 'D':
-            new_log_level = AUDIO_LOG_LEVEL_DEBUG;
-            break;
-        case 'I':
-            new_log_level = AUDIO_LOG_LEVEL_INFO;
-            break;
-        case 'N':
-            new_log_level = AUDIO_LOG_LEVEL_NOTICE;
-            break;
-        case 'W':
-            new_log_level = AUDIO_LOG_LEVEL_WARNING;
-            break;
-        case 'E':
-            new_log_level = AUDIO_LOG_LEVEL_ERROR;
-            break;
-        case '0':
-            new_log_level = AUDIO_LOG_LEVEL_NONE;
-            break;
-        default:
-            ad_loge("Unkown audio log level character: %c\n", level_char);
-            new_log_level = audio_log_level;
-            break;
-    }
-    
-    if(audio_log_level != new_log_level)
-    {
-        ad_logi("Change audio log level from %d to %d\n", audio_log_level, new_log_level);
-        audio_log_level = new_log_level;
-    }
-    else
-    {
-        ad_logi("Audio log level remains %d\n", audio_log_level);
-    }
-    return count;
-}
-DRIVER_ATTR(audio_log_level, 0644, audio_log_level_show, audio_log_level_store);
-
 static struct attribute *audio_attrs[] = {
     &driver_attr_audio_property.attr,
     &driver_attr_product_identifier.attr,
     &driver_attr_aud_param_ver.attr,
-    &driver_attr_audio_log_level.attr,
     NULL,
 };
 
@@ -265,7 +147,7 @@ int audio_dsm_register(void)
     audio_dclient = dsm_register_client(&audio_dsm_info);
     if(NULL == audio_dclient)
     {
-        ad_loge("audio_dclient register failed!\n");
+        pr_err("audio_dclient register failed!\n");
     }
 
     return 0;
@@ -277,18 +159,18 @@ int audio_dsm_report_num(int error_no, unsigned int mesg_no)
     
     if(NULL == audio_dclient)
     {
-        ad_loge("%s audio_dclient did not register!\n", __func__);
+        pr_err("%s audio_dclient did not register!\n", __func__);
         return 0;
     }
     
     err = dsm_client_ocuppy(audio_dclient);
     if(0 != err)
     {
-        ad_loge("%s user buffer is busy!\n", __func__);
+        pr_err("%s user buffer is busy!\n", __func__);
         return 0;
     }
 
-    ad_loge("%s user buffer apply successed, error_no=0x%x, mesg_no=0x%x!\n",
+    pr_err("%s user buffer apply successed, error_no=0x%x, mesg_no=0x%x!\n",
         __func__, error_no, mesg_no);
     
     err = dsm_client_record(audio_dclient, "Message code = 0x%x.\n", mesg_no);
@@ -305,20 +187,20 @@ int audio_dsm_report_info(int error_no, void *log, int size)
     
     if(NULL == audio_dclient)
     {
-        ad_loge("%s audio_dclient did not register!\n", __func__);
+        pr_err("%s audio_dclient did not register!\n", __func__);
         return 0;
     }
 
     if((error_no < DSM_AUDIO_ERROR_NUM) || (NULL == log) || (size < 0))
     {
-        ad_loge("%s input param error!\n", __func__);
+        pr_err("%s input param error!\n", __func__);
         return 0;
     }
     
     err = dsm_client_ocuppy(audio_dclient);
     if(0 != err)
     {
-        ad_loge("%s user buffer is busy!\n", __func__);
+        pr_err("%s user buffer is busy!\n", __func__);
         return 0;
     }
     
@@ -378,13 +260,13 @@ static int audio_info_probe(struct platform_device *pdev)
     
     if(NULL == pdev)
     {
-        ad_loge("huawei_audio: audio_info_probe failed, pdev is NULL\n");
+        pr_err("huawei_audio: audio_info_probe failed, pdev is NULL\n");
         return 0;
     }
     
     if(NULL == pdev->dev.of_node)
     {
-        ad_loge("huawei_audio: audio_info_probe failed, of_node is NULL\n");
+        pr_err("huawei_audio: audio_info_probe failed, of_node is NULL\n");
         return 0;
     }
 
@@ -396,7 +278,7 @@ static int audio_info_probe(struct platform_device *pdev)
     }
     else
     {
-        ad_loge("huawei_audio: check mic config, no master mic found\n");
+        pr_err("huawei_audio: check mic config, no master mic found\n");
     }
     
     if(of_property_read_bool(pdev->dev.of_node, AUDIO_PROP_SECONDARY_MIC_EXIST_NODE))
@@ -443,7 +325,7 @@ static int audio_info_probe(struct platform_device *pdev)
     ret = of_property_read_string(pdev->dev.of_node, PRODUCT_IDENTIFIER_NODE, &string);
     if(ret || (NULL == string))
     {
-        ad_loge("huawei_audio: of_property_read_string product-identifier failed %d\n", ret);
+        pr_err("huawei_audio: of_property_read_string product-identifier failed %d\n", ret);
     }
     else
     {
@@ -453,7 +335,7 @@ static int audio_info_probe(struct platform_device *pdev)
 
     if(false == of_property_read_bool(pdev->dev.of_node, PRODUCT_NERC_ADAPT_CONFIG))
     {
-        ad_loge("huawei_audio: of_property_read_bool PRODUCT_NERC_ADAPT_CONFIG failed %d\n", ret);
+        pr_err("huawei_audio: of_property_read_bool PRODUCT_NERC_ADAPT_CONFIG failed %d\n", ret);
         audio_property |= (AUDIO_PROP_BTSCO_NREC_ADAPT_OFF & AUDIO_PROP_BTSCO_NREC_ADAPT_MASK);
     }
     else       
@@ -465,7 +347,7 @@ static int audio_info_probe(struct platform_device *pdev)
     ret = of_property_read_string(pdev->dev.of_node, AUD_PARAM_VER_NODE, &string);
     if(ret || (NULL == string))
     {
-        ad_loge("huawei_audio: of_property_read_string aud_param_ver failed %d\n", ret);
+        pr_err("huawei_audio: of_property_read_string aud_param_ver failed %d\n", ret);
     }
     else
     {

@@ -29,7 +29,6 @@
 #include <linux/regulator/consumer.h>
 #include <linux/i2c.h>
 #include <sound/soc.h>
-#include <sound/hw_audio_log.h>
 
 #define WCD9XXX_REGISTER_START_OFFSET 0x800
 #define WCD9XXX_SLIM_RW_MAX_TRIES 3
@@ -74,20 +73,20 @@ static int extcodec_get_pinctrl(struct device *dev)
 	struct pinctrl *pinctrl;
 	pinctrl = pinctrl_get(dev);
 	if (IS_ERR(pinctrl)) {
-		ad_loge("%s: Unable to get pinctrl handle\n", __func__);
+		pr_err("%s: Unable to get pinctrl handle\n", __func__);
 		return -EINVAL;
 	}
 	pinctrl_info1.pinctrl = pinctrl;
 	/* get all the states handles from Device Tree*/
 	pinctrl_info1.extncodec_sus = pinctrl_lookup_state(pinctrl, "suspend");
 	if (IS_ERR(pinctrl_info1.extncodec_sus)) {
-		ad_loge("%s: Unable to get pinctrl disable state handle\n",
+		pr_err("%s: Unable to get pinctrl disable state handle\n",
 				__func__);
 		return -EINVAL;
 	}
 	pinctrl_info1.extncodec_act = pinctrl_lookup_state(pinctrl, "active");
 	if (IS_ERR(pinctrl_info1.extncodec_act)) {
-		ad_loge("%s: Unable to get pinctrl disable state handle\n",
+		pr_err("%s: Unable to get pinctrl disable state handle\n",
 				__func__);
 		return -EINVAL;
 	}
@@ -109,17 +108,17 @@ static int wcd9xxx_read(struct wcd9xxx *wcd9xxx, unsigned short reg,
 	int i, ret;
 
 	if (bytes <= 0) {
-		ad_dev_loge(wcd9xxx->dev, "Invalid byte read length %d\n", bytes);
+		dev_err(wcd9xxx->dev, "Invalid byte read length %d\n", bytes);
 		return -EINVAL;
 	}
 
 	ret = wcd9xxx->read_dev(wcd9xxx, reg, bytes, dest, interface_reg);
 	if (ret < 0) {
-		ad_dev_loge(wcd9xxx->dev, "Codec read failed\n");
+		dev_err(wcd9xxx->dev, "Codec read failed\n");
 		return ret;
 	} else {
 		for (i = 0; i < bytes; i++)
-			ad_dev_logd(wcd9xxx->dev, "Read 0x%02x from 0x%x\n",
+			dev_dbg(wcd9xxx->dev, "Read 0x%02x from 0x%x\n",
 				((u8 *)dest)[i], reg + i);
 	}
 
@@ -158,12 +157,12 @@ static int wcd9xxx_write(struct wcd9xxx *wcd9xxx, unsigned short reg,
 	int i;
 
 	if (bytes <= 0) {
-		ad_loge("%s: Error, invalid write length\n", __func__);
+		pr_err("%s: Error, invalid write length\n", __func__);
 		return -EINVAL;
 	}
 
 	for (i = 0; i < bytes; i++)
-		ad_dev_logd(wcd9xxx->dev, "Write %02x to 0x%x\n", ((u8 *)src)[i],
+		dev_dbg(wcd9xxx->dev, "Write %02x to 0x%x\n", ((u8 *)src)[i],
 			reg + i);
 
 	return wcd9xxx->write_dev(wcd9xxx, reg, bytes, src, interface_reg);
@@ -292,7 +291,7 @@ static int wcd9xxx_slim_read_device(struct wcd9xxx *wcd9xxx, unsigned short reg,
 	}
 
 	if (ret)
-		ad_loge("%s: Error, Codec read failed (%d)\n", __func__, ret);
+		pr_err("%s: Error, Codec read failed (%d)\n", __func__, ret);
 
 	return ret;
 }
@@ -321,7 +320,7 @@ static int wcd9xxx_slim_write_device(struct wcd9xxx *wcd9xxx,
 	}
 
 	if (ret)
-		ad_loge("%s: Error, Codec write failed (%d)\n", __func__, ret);
+		pr_err("%s: Error, Codec write failed (%d)\n", __func__, ret);
 
 	return ret;
 }
@@ -422,7 +421,7 @@ static void wcd9xxx_bring_up(struct wcd9xxx *wcd9xxx)
 	enum codec_variant cdc_var;
 
 	if (!pdata) {
-		ad_dev_logd(wcd9xxx->dev, "No platform data to get codec variant, falling back to default\n");
+		dev_dbg(wcd9xxx->dev, "No platform data to get codec variant, falling back to default\n");
 		cdc_var = WCD9XXX;
 	} else
 		cdc_var = pdata->cdc_variant;
@@ -468,7 +467,7 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 			&& !wcd9xxx->use_pinctrl) {
 		ret = gpio_request(wcd9xxx->reset_gpio, "CDC_RESET");
 		if (ret) {
-			ad_loge("%s: Failed to request gpio %d\n", __func__,
+			pr_err("%s: Failed to request gpio %d\n", __func__,
 				wcd9xxx->reset_gpio);
 			wcd9xxx->reset_gpio = 0;
 			return ret;
@@ -480,7 +479,7 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 			ret = pinctrl_select_state(pinctrl_info1.pinctrl,
 				pinctrl_info1.extncodec_act);
 			if (ret != 0) {
-				ad_loge("%s: Failed to enable gpio pins\n",
+				pr_err("%s: Failed to enable gpio pins\n",
 						__func__);
 				return -EIO;
 			}
@@ -491,7 +490,7 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 			ret = pinctrl_select_state(pinctrl_info1.pinctrl,
 					pinctrl_info1.extncodec_sus);
 			if (ret != 0) {
-				ad_loge("%s: Failed to suspend reset pins\n",
+				pr_err("%s: Failed to suspend reset pins\n",
 						__func__);
 				return -EIO;
 			}
@@ -533,7 +532,7 @@ static const struct wcd9xxx_codec_type
 			       (u8 *)&wcd9xxx->id_major);
 	if (rc < 0)
 		goto exit;
-	ad_dev_logd(wcd9xxx->dev, "%s: wcd9xxx chip id major 0x%x, minor 0x%x\n",
+	dev_dbg(wcd9xxx->dev, "%s: wcd9xxx chip id major 0x%x, minor 0x%x\n",
 		__func__, wcd9xxx->id_major, wcd9xxx->id_minor);
 
 	for (i = 0, c = &wcd9xxx_codecs[0]; i < ARRAY_SIZE(wcd9xxx_codecs);
@@ -541,7 +540,7 @@ static const struct wcd9xxx_codec_type
 		if (c->id_major == wcd9xxx->id_major) {
 			if (c->id_minor == wcd9xxx->id_minor) {
 				d = c;
-				ad_dev_logd(wcd9xxx->dev,
+				dev_dbg(wcd9xxx->dev,
 					"%s: exact match %s\n", __func__,
 					d->dev->name);
 				break;
@@ -553,7 +552,7 @@ static const struct wcd9xxx_codec_type
 				     d->version < c->version))
 					d = c;
 			}
-			ad_dev_logd(wcd9xxx->dev,
+			dev_dbg(wcd9xxx->dev,
 				"%s: best match %s, major 0x%x, minor 0x%x\n",
 				__func__, d->dev->name, d->id_major,
 				d->id_minor);
@@ -561,7 +560,7 @@ static const struct wcd9xxx_codec_type
 	}
 
 	if (!d) {
-		ad_dev_logw(wcd9xxx->dev,
+		dev_warn(wcd9xxx->dev,
 			 "%s: driver for id major 0x%x, minor 0x%x not found\n",
 			 __func__, wcd9xxx->id_major, wcd9xxx->id_minor);
 	} else {
@@ -576,7 +575,7 @@ static const struct wcd9xxx_codec_type
 			}
 			*version = (u8)rc & 0x1F;
 		}
-		ad_dev_logn(wcd9xxx->dev,
+		dev_info(wcd9xxx->dev,
 			 "%s: detected %s, major 0x%x, minor 0x%x, ver 0x%x\n",
 			 __func__, d->dev->name, d->id_major, d->id_minor,
 			 *version);
@@ -751,13 +750,13 @@ static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx)
 	ret = mfd_add_devices(wcd9xxx->dev, -1, found->dev, found->size,
 			      NULL, 0, NULL);
 	if (ret != 0) {
-		ad_dev_loge(wcd9xxx->dev, "Failed to add children: %d\n", ret);
+		dev_err(wcd9xxx->dev, "Failed to add children: %d\n", ret);
 		goto err_irq;
 	}
 
 	ret = device_init_wakeup(wcd9xxx->dev, true);
 	if (ret) {
-		ad_dev_loge(wcd9xxx->dev, "Device wakeup init failed: %d\n", ret);
+		dev_err(wcd9xxx->dev, "Device wakeup init failed: %d\n", ret);
 		goto err_irq;
 	}
 
@@ -876,7 +875,7 @@ static ssize_t codec_debug_write(struct file *filp,
 	if (rc == 0)
 		rc = cnt;
 	else
-		ad_loge("%s: rc = %d\n", __func__, rc);
+		pr_err("%s: rc = %d\n", __func__, rc);
 
 	return rc;
 }
@@ -904,7 +903,7 @@ static int wcd9xxx_init_supplies(struct wcd9xxx *wcd9xxx,
 	wcd9xxx->num_of_supplies = 0;
 
 	if (ARRAY_SIZE(pdata->regulator) > WCD9XXX_MAX_REGULATOR) {
-		ad_loge("%s: Array Size out of bound\n", __func__);
+		pr_err("%s: Array Size out of bound\n", __func__);
 		ret = -EINVAL;
 		goto err;
 	}
@@ -919,7 +918,7 @@ static int wcd9xxx_init_supplies(struct wcd9xxx *wcd9xxx,
 	ret = regulator_bulk_get(wcd9xxx->dev, wcd9xxx->num_of_supplies,
 				 wcd9xxx->supplies);
 	if (ret != 0) {
-		ad_dev_loge(wcd9xxx->dev, "Failed to get supplies: err = %d\n",
+		dev_err(wcd9xxx->dev, "Failed to get supplies: err = %d\n",
 							ret);
 		goto err_supplies;
 	}
@@ -932,7 +931,7 @@ static int wcd9xxx_init_supplies(struct wcd9xxx *wcd9xxx,
 					    pdata->regulator[i].min_uV,
 					    pdata->regulator[i].max_uV);
 		if (ret) {
-			ad_loge("%s: Setting regulator voltage failed for regulator %s err = %d\n",
+			pr_err("%s: Setting regulator voltage failed for regulator %s err = %d\n",
 				__func__,
 				wcd9xxx->supplies[i].supply, ret);
 			goto err_get;
@@ -941,7 +940,7 @@ static int wcd9xxx_init_supplies(struct wcd9xxx *wcd9xxx,
 		ret = regulator_set_optimum_mode(wcd9xxx->supplies[i].consumer,
 						pdata->regulator[i].optimum_uA);
 		if (ret < 0) {
-			ad_loge("%s: Setting regulator optimum mode failed for regulator %s err = %d\n",
+			pr_err("%s: Setting regulator optimum mode failed for regulator %s err = %d\n",
 				__func__,
 				wcd9xxx->supplies[i].supply, ret);
 			goto err_get;
@@ -971,11 +970,11 @@ static int wcd9xxx_enable_static_supplies(struct wcd9xxx *wcd9xxx,
 			continue;
 		ret = regulator_enable(wcd9xxx->supplies[i].consumer);
 		if (ret) {
-			ad_loge("%s: Failed to enable %s\n", __func__,
+			pr_err("%s: Failed to enable %s\n", __func__,
 			       wcd9xxx->supplies[i].supply);
 			break;
 		} else {
-			ad_logd("%s: Enabled regulator %s\n", __func__,
+			pr_debug("%s: Enabled regulator %s\n", __func__,
 				 wcd9xxx->supplies[i].supply);
 		}
 	}
@@ -998,10 +997,10 @@ static void wcd9xxx_disable_supplies(struct wcd9xxx *wcd9xxx,
 			continue;
 		rc = regulator_disable(wcd9xxx->supplies[i].consumer);
 		if (rc) {
-			ad_loge("%s: Failed to disable %s\n", __func__,
+			pr_err("%s: Failed to disable %s\n", __func__,
 			       wcd9xxx->supplies[i].supply);
 		} else {
-			ad_logd("%s: Disabled regulator %s\n", __func__,
+			pr_debug("%s: Disabled regulator %s\n", __func__,
 				 wcd9xxx->supplies[i].supply);
 		}
 	}
@@ -1054,7 +1053,7 @@ int wcd9xxx_i2c_write_device(u16 reg, u8 *value,
 
 	wcd9xxx = get_i2c_wcd9xxx_device_info(reg);
 	if (wcd9xxx == NULL || wcd9xxx->client == NULL) {
-		ad_loge("failed to get device info\n");
+		pr_err("failed to get device info\n");
 		return -ENODEV;
 	}
 	reg_addr = (u8)reg;
@@ -1071,11 +1070,11 @@ int wcd9xxx_i2c_write_device(u16 reg, u8 *value,
 		ret = i2c_transfer(wcd9xxx->client->adapter,
 						wcd9xxx->xfer_msg, 1);
 		if (ret != 1) {
-			ad_loge("failed to write the device\n");
+			pr_err("failed to write the device\n");
 			return ret;
 		}
 	}
-	ad_logd("write sucess register = %x val = %x\n", reg, data[1]);
+	pr_debug("write sucess register = %x val = %x\n", reg, data[1]);
 	return 0;
 }
 
@@ -1091,7 +1090,7 @@ int wcd9xxx_i2c_read_device(unsigned short reg,
 
 	wcd9xxx = get_i2c_wcd9xxx_device_info(reg);
 	if (wcd9xxx == NULL || wcd9xxx->client == NULL) {
-		ad_loge("failed to get device info\n");
+		pr_err("failed to get device info\n");
 		return -ENODEV;
 	}
 	for (i = 0; i < bytes; i++) {
@@ -1115,7 +1114,7 @@ int wcd9xxx_i2c_read_device(unsigned short reg,
 			ret = i2c_transfer(wcd9xxx->client->adapter,
 							wcd9xxx->xfer_msg, 2);
 			if (ret != 2) {
-				ad_loge("failed to read wcd9xxx register\n");
+				pr_err("failed to read wcd9xxx register\n");
 				return ret;
 			}
 		}
@@ -1172,18 +1171,18 @@ static int wcd9xxx_i2c_probe(struct i2c_client *client,
 
 	intf_type = wcd9xxx_get_intf_type();
 
-	ad_logd("%s: interface status %d\n", __func__, intf_type);
+	pr_debug("%s: interface status %d\n", __func__, intf_type);
 	if (intf_type == WCD9XXX_INTERFACE_TYPE_SLIMBUS) {
-		ad_dev_logd(&client->dev, "%s:Codec is detected in slimbus mode\n",
+		dev_dbg(&client->dev, "%s:Codec is detected in slimbus mode\n",
 			__func__);
 		return -ENODEV;
 	} else if (intf_type == WCD9XXX_INTERFACE_TYPE_I2C) {
 		ret = wcd9xxx_i2c_get_client_index(client, &wcd9xx_index);
 		if (ret != 0)
-			ad_dev_loge(&client->dev, "%s: I2C set codec I2C\n"
+			dev_err(&client->dev, "%s: I2C set codec I2C\n"
 				"client failed\n", __func__);
 		else {
-			ad_dev_loge(&client->dev, "%s:probe for other slaves\n"
+			dev_err(&client->dev, "%s:probe for other slaves\n"
 				"devices of codec I2C slave Addr = %x\n",
 				__func__, client->addr);
 			wcd9xxx_modules[wcd9xx_index].client = client;
@@ -1192,24 +1191,24 @@ static int wcd9xxx_i2c_probe(struct i2c_client *client,
 	} else if (intf_type == WCD9XXX_INTERFACE_TYPE_PROBING) {
 		dev = &client->dev;
 		if (client->dev.of_node) {
-			ad_dev_logd(&client->dev, "%s:Platform data\n"
+			dev_dbg(&client->dev, "%s:Platform data\n"
 				"from device tree\n", __func__);
 			pdata = wcd9xxx_populate_dt_pdata(&client->dev);
 			client->dev.platform_data = pdata;
 		} else {
-			ad_dev_logd(&client->dev, "%s:Platform data from\n"
+			dev_dbg(&client->dev, "%s:Platform data from\n"
 				"board file\n", __func__);
 			pdata = client->dev.platform_data;
 		}
 		wcd9xxx = kzalloc(sizeof(struct wcd9xxx), GFP_KERNEL);
 		if (wcd9xxx == NULL) {
-			ad_loge("%s: error, allocation failed\n", __func__);
+			pr_err("%s: error, allocation failed\n", __func__);
 			ret = -ENOMEM;
 			goto fail;
 		}
 
 		if (!pdata) {
-			ad_dev_logd(&client->dev, "no platform data?\n");
+			dev_dbg(&client->dev, "no platform data?\n");
 			ret = -EINVAL;
 			goto fail;
 		}
@@ -1219,11 +1218,11 @@ static int wcd9xxx_i2c_probe(struct i2c_client *client,
 			wcd9xxx->use_pinctrl = false;
 		else
 			wcd9xxx->use_pinctrl = true;
-		ad_dev_logd(&client->dev, " wcd9xxx->use_pinctrl = %d\n",wcd9xxx->use_pinctrl);
+		dev_dbg(&client->dev, " wcd9xxx->use_pinctrl = %d\n",wcd9xxx->use_pinctrl);
 
 		if (i2c_check_functionality(client->adapter,
 					    I2C_FUNC_I2C) == 0) {
-			ad_dev_logd(&client->dev, "can't talk I2C?\n");
+			dev_dbg(&client->dev, "can't talk I2C?\n");
 			ret = -EIO;
 			goto fail;
 		}
@@ -1236,14 +1235,14 @@ static int wcd9xxx_i2c_probe(struct i2c_client *client,
 
 		ret = wcd9xxx_init_supplies(wcd9xxx, pdata);
 		if (ret) {
-			ad_loge("%s: Fail to enable Codec supplies\n",
+			pr_err("%s: Fail to enable Codec supplies\n",
 			       __func__);
 			goto err_codec;
 		}
 
 		ret = wcd9xxx_enable_static_supplies(wcd9xxx, pdata);
 		if (ret) {
-			ad_loge("%s: Fail to enable Codec pre-reset supplies\n",
+			pr_err("%s: Fail to enable Codec pre-reset supplies\n",
 			       __func__);
 			goto err_codec;
 		}
@@ -1251,13 +1250,13 @@ static int wcd9xxx_i2c_probe(struct i2c_client *client,
 
 		ret = wcd9xxx_reset(wcd9xxx);
 		if (ret) {
-			ad_loge("%s: Resetting Codec failed\n", __func__);
+			pr_err("%s: Resetting Codec failed\n", __func__);
 			goto err_supplies;
 		}
 
 		ret = wcd9xxx_i2c_get_client_index(client, &wcd9xx_index);
 		if (ret != 0) {
-			ad_loge("%s:Set codec I2C client failed\n", __func__);
+			pr_err("%s:Set codec I2C client failed\n", __func__);
 			goto err_supplies;
 		}
 
@@ -1270,23 +1269,23 @@ static int wcd9xxx_i2c_probe(struct i2c_client *client,
 
 		ret = wcd9xxx_device_init(wcd9xxx);
 		if (ret) {
-			ad_loge("%s: error, initializing device failed\n",
+			pr_err("%s: error, initializing device failed\n",
 			       __func__);
 			goto err_device_init;
 		}
 
 		ret = wcd9xxx_read(wcd9xxx, WCD9XXX_A_CHIP_STATUS, 1, &val, 0);
 		if (ret < 0)
-			ad_loge("%s: failed to read the wcd9xxx status (%d)\n",
+			pr_err("%s: failed to read the wcd9xxx status (%d)\n",
 			       __func__, ret);
 		if (val != wcd9xxx->codec_type->i2c_chip_status)
-			ad_loge("%s: unknown chip status 0x%x\n", __func__, val);
+			pr_err("%s: unknown chip status 0x%x\n", __func__, val);
 
 		wcd9xxx_set_intf_type(WCD9XXX_INTERFACE_TYPE_I2C);
 
 		return ret;
 	} else
-		ad_loge("%s: I2C probe in wrong state\n", __func__);
+		pr_err("%s: I2C probe in wrong state\n", __func__);
 
 
 err_device_init:
@@ -1303,7 +1302,7 @@ static int wcd9xxx_i2c_remove(struct i2c_client *client)
 {
 	struct wcd9xxx *wcd9xxx;
 	struct wcd9xxx_pdata *pdata = client->dev.platform_data;
-	ad_logd("exit\n");
+	pr_debug("exit\n");
 	wcd9xxx = dev_get_drvdata(&client->dev);
 	wcd9xxx_disable_supplies(wcd9xxx, pdata);
 	wcd9xxx_device_exit(wcd9xxx);
@@ -1326,7 +1325,7 @@ static int wcd9xxx_dt_parse_vreg_info(struct device *dev,
 	regnode = of_parse_phandle(dev->of_node, prop_name, 0);
 
 	if (!regnode) {
-		ad_dev_loge(dev, "Looking up %s property in node %s failed",
+		dev_err(dev, "Looking up %s property in node %s failed",
 				prop_name, dev->of_node->full_name);
 		return -ENODEV;
 	}
@@ -1338,7 +1337,7 @@ static int wcd9xxx_dt_parse_vreg_info(struct device *dev,
 	prop = of_get_property(dev->of_node, prop_name, &len);
 
 	if (!prop || (len != (2 * sizeof(__be32)))) {
-		ad_dev_loge(dev, "%s %s property\n",
+		dev_err(dev, "%s %s property\n",
 				prop ? "invalid format" : "no", prop_name);
 		return -EINVAL;
 	} else {
@@ -1351,13 +1350,13 @@ static int wcd9xxx_dt_parse_vreg_info(struct device *dev,
 
 	ret = of_property_read_u32(dev->of_node, prop_name, &prop_val);
 	if (ret) {
-		ad_dev_loge(dev, "Looking up %s property in node %s failed",
+		dev_err(dev, "Looking up %s property in node %s failed",
 				prop_name, dev->of_node->full_name);
 		return -EFAULT;
 	}
 	vreg->optimum_uA = prop_val;
 
-	ad_dev_logn(dev, "%s: vol=[%d %d]uV, curr=[%d]uA, ond %d\n", vreg->name,
+	dev_info(dev, "%s: vol=[%d %d]uV, curr=[%d]uA, ond %d\n", vreg->name,
 		vreg->min_uV, vreg->max_uV, vreg->optimum_uA, vreg->ondemand);
 	return 0;
 }
@@ -1368,7 +1367,7 @@ static int wcd9xxx_read_of_property_u32(struct device *dev,
 	int ret = 0;
 	ret = of_property_read_u32(dev->of_node, name, val);
 	if (ret)
-		ad_dev_loge(dev, "Looking up %s property in node %s failed",
+		dev_err(dev, "Looking up %s property in node %s failed",
 				name, dev->of_node->full_name);
 	return ret;
 }
@@ -1429,22 +1428,22 @@ static int wcd9xxx_dt_parse_micbias_info(struct device *dev,
 	    of_property_read_bool(dev->of_node,
 				  "qcom,cdc-micbias2-headset-only");
 
-	ad_dev_logd(dev, "ldoh_v  %u cfilt1_mv %u cfilt2_mv %u cfilt3_mv %u",
+	dev_dbg(dev, "ldoh_v  %u cfilt1_mv %u cfilt2_mv %u cfilt3_mv %u",
 		(u32)micbias->ldoh_v, (u32)micbias->cfilt1_mv,
 		(u32)micbias->cfilt2_mv, (u32)micbias->cfilt3_mv);
 
-	ad_dev_logd(dev, "bias1_cfilt_sel %u bias2_cfilt_sel %u\n",
+	dev_dbg(dev, "bias1_cfilt_sel %u bias2_cfilt_sel %u\n",
 		(u32)micbias->bias1_cfilt_sel, (u32)micbias->bias2_cfilt_sel);
 
-	ad_dev_logd(dev, "bias3_cfilt_sel %u bias4_cfilt_sel %u\n",
+	dev_dbg(dev, "bias3_cfilt_sel %u bias4_cfilt_sel %u\n",
 		(u32)micbias->bias3_cfilt_sel, (u32)micbias->bias4_cfilt_sel);
 
-	ad_dev_logd(dev, "bias1_ext_cap %d bias2_ext_cap %d\n",
+	dev_dbg(dev, "bias1_ext_cap %d bias2_ext_cap %d\n",
 		micbias->bias1_cap_mode, micbias->bias2_cap_mode);
-	ad_dev_logd(dev, "bias3_ext_cap %d bias4_ext_cap %d\n",
+	dev_dbg(dev, "bias3_ext_cap %d bias4_ext_cap %d\n",
 		micbias->bias3_cap_mode, micbias->bias4_cap_mode);
 
-	ad_dev_logd(dev, "bias2_is_headset_only %d\n",
+	dev_dbg(dev, "bias2_is_headset_only %d\n",
 		micbias->bias2_is_headset_only);
 	return 0;
 }
@@ -1458,19 +1457,19 @@ static int wcd9xxx_dt_parse_slim_interface_dev_info(struct device *dev,
 	ret = of_property_read_string(dev->of_node, "qcom,cdc-slim-ifd",
 				      &slim_ifd->name);
 	if (ret) {
-		ad_dev_loge(dev, "Looking up %s property in node %s failed",
+		dev_err(dev, "Looking up %s property in node %s failed",
 			"qcom,cdc-slim-ifd-dev", dev->of_node->full_name);
 		return -ENODEV;
 	}
 	prop = of_find_property(dev->of_node,
 			"qcom,cdc-slim-ifd-elemental-addr", NULL);
 	if (!prop) {
-		ad_dev_loge(dev, "Looking up %s property in node %s failed",
+		dev_err(dev, "Looking up %s property in node %s failed",
 			"qcom,cdc-slim-ifd-elemental-addr",
 			dev->of_node->full_name);
 		return -ENODEV;
 	} else if (prop->length != 6) {
-		ad_dev_loge(dev, "invalid codec slim ifd addr. addr length = %d\n",
+		dev_err(dev, "invalid codec slim ifd addr. addr length = %d\n",
 			      prop->length);
 		return -ENODEV;
 	}
@@ -1487,7 +1486,7 @@ static int wcd9xxx_process_supplies(struct device *dev,
 	const char *name;
 
 	if (supply_cnt == 0) {
-		ad_dev_logd(dev, "%s: no supplies defined for %s\n", __func__,
+		dev_dbg(dev, "%s: no supplies defined for %s\n", __func__,
 				supply_list);
 		return 0;
 	}
@@ -1497,12 +1496,12 @@ static int wcd9xxx_process_supplies(struct device *dev,
 						    supply_list, idx,
 						    &name);
 		if (ret) {
-			ad_dev_loge(dev, "%s: of read string %s idx %d error %d\n",
+			dev_err(dev, "%s: of read string %s idx %d error %d\n",
 				__func__, supply_list, idx, ret);
 			goto err;
 		}
 
-		ad_dev_logd(dev, "%s: Found cdc supply %s as part of %s\n",
+		dev_dbg(dev, "%s: Found cdc supply %s as part of %s\n",
 				__func__, name, supply_list);
 		ret = wcd9xxx_dt_parse_vreg_info(dev,
 					&pdata->regulator[index + idx],
@@ -1531,13 +1530,13 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
-		ad_dev_loge(dev, "could not allocate memory for platform data\n");
+		dev_err(dev, "could not allocate memory for platform data\n");
 		return NULL;
 	}
 
 	static_cnt = of_property_count_strings(dev->of_node, static_prop_name);
 	if (IS_ERR_VALUE(static_cnt)) {
-		ad_dev_loge(dev, "%s: Failed to get static supplies %d\n", __func__,
+		dev_err(dev, "%s: Failed to get static supplies %d\n", __func__,
 			static_cnt);
 		goto err;
 	}
@@ -1556,7 +1555,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	BUG_ON(static_cnt <= 0 || ond_cnt < 0 || cp_supplies_cnt < 0);
 	if ((static_cnt + ond_cnt + cp_supplies_cnt)
 			> ARRAY_SIZE(pdata->regulator)) {
-		ad_dev_loge(dev, "%s: Num of supplies %u > max supported %zu\n",
+		dev_err(dev, "%s: Num of supplies %u > max supported %zu\n",
 			__func__, static_cnt, ARRAY_SIZE(pdata->regulator));
 		goto err;
 	}
@@ -1584,17 +1583,17 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	pdata->reset_gpio = of_get_named_gpio(dev->of_node,
 				"qcom,cdc-reset-gpio", 0);
 	if (pdata->reset_gpio < 0) {
-		ad_dev_loge(dev, "Looking up %s property in node %s failed %d\n",
+		dev_err(dev, "Looking up %s property in node %s failed %d\n",
 			"qcom, cdc-reset-gpio", dev->of_node->full_name,
 			pdata->reset_gpio);
 		goto err;
 	}
-	ad_dev_logd(dev, "%s: reset gpio %d", __func__, pdata->reset_gpio);
+	dev_dbg(dev, "%s: reset gpio %d", __func__, pdata->reset_gpio);
 	ret = of_property_read_u32(dev->of_node,
 				   "qcom,cdc-mclk-clk-rate",
 				   &mclk_rate);
 	if (ret) {
-		ad_dev_loge(dev, "Looking up %s property in\n"
+		dev_err(dev, "Looking up %s property in\n"
 			"node %s failed",
 			"qcom,cdc-mclk-clk-rate",
 			dev->of_node->full_name);
@@ -1608,7 +1607,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 				"qcom,cdc-dmic-sample-rate",
 				&dmic_sample_rate);
 	if (ret) {
-		ad_dev_loge(dev, "Looking up %s property in node %s failed",
+		dev_err(dev, "Looking up %s property in node %s failed",
 			"qcom,cdc-dmic-sample-rate",
 			dev->of_node->full_name);
 		dmic_sample_rate = WCD9XXX_DMIC_SAMPLE_RATE_UNDEFINED;
@@ -1618,7 +1617,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 		    (dmic_sample_rate != WCD9XXX_DMIC_SAMPLE_RATE_3P2MHZ) &&
 		    (dmic_sample_rate != WCD9XXX_DMIC_SAMPLE_RATE_4P8MHZ) &&
 		    (dmic_sample_rate != WCD9XXX_DMIC_SAMPLE_RATE_UNDEFINED)) {
-			ad_dev_loge(dev, "Invalid dmic rate %d for mclk %d\n",
+			dev_err(dev, "Invalid dmic rate %d for mclk %d\n",
 				dmic_sample_rate, pdata->mclk_rate);
 			ret = -EINVAL;
 			goto err;
@@ -1628,7 +1627,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 		    (dmic_sample_rate != WCD9XXX_DMIC_SAMPLE_RATE_4P096MHZ) &&
 		    (dmic_sample_rate != WCD9XXX_DMIC_SAMPLE_RATE_6P144MHZ) &&
 		    (dmic_sample_rate != WCD9XXX_DMIC_SAMPLE_RATE_UNDEFINED)) {
-			ad_dev_loge(dev, "Invalid dmic rate %d for mclk %d\n",
+			dev_err(dev, "Invalid dmic rate %d for mclk %d\n",
 				dmic_sample_rate, pdata->mclk_rate);
 			ret = -EINVAL;
 			goto err;
@@ -1640,7 +1639,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 				"qcom,cdc-variant",
 				&cdc_name);
 	if (ret) {
-		ad_dev_logd(dev, "Property %s not found in node %s\n",
+		dev_dbg(dev, "Property %s not found in node %s\n",
 				"qcom,cdc-variant",
 				dev->of_node->full_name);
 		pdata->cdc_variant = WCD9XXX;
@@ -1687,17 +1686,17 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 	intf_type = wcd9xxx_get_intf_type();
 
 	if (intf_type == WCD9XXX_INTERFACE_TYPE_I2C) {
-		ad_dev_logd(&slim->dev, "%s:Codec is detected in I2C mode\n",
+		dev_dbg(&slim->dev, "%s:Codec is detected in I2C mode\n",
 			__func__);
 		return -ENODEV;
 	}
 	if (slim->dev.of_node) {
-		ad_dev_logn(&slim->dev, "Platform data from device tree\n");
+		dev_info(&slim->dev, "Platform data from device tree\n");
 		pdata = wcd9xxx_populate_dt_pdata(&slim->dev);
 		ret = wcd9xxx_dt_parse_slim_interface_dev_info(&slim->dev,
 				&pdata->slimbus_slave_device);
 		if (ret) {
-			ad_dev_loge(&slim->dev, "Error, parsing slim interface\n");
+			dev_err(&slim->dev, "Error, parsing slim interface\n");
 			devm_kfree(&slim->dev, pdata);
 			ret = -EINVAL;
 			goto err;
@@ -1705,24 +1704,24 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		slim->dev.platform_data = pdata;
 
 	} else {
-		ad_dev_logn(&slim->dev, "Platform data from board file\n");
+		dev_info(&slim->dev, "Platform data from board file\n");
 		pdata = slim->dev.platform_data;
 	}
 
 	if (!pdata) {
-		ad_dev_loge(&slim->dev, "Error, no platform data\n");
+		dev_err(&slim->dev, "Error, no platform data\n");
 		ret = -EINVAL;
 		goto err;
 	}
 
 	wcd9xxx = kzalloc(sizeof(struct wcd9xxx), GFP_KERNEL);
 	if (wcd9xxx == NULL) {
-		ad_loge("%s: error, allocation failed\n", __func__);
+		pr_err("%s: error, allocation failed\n", __func__);
 		ret = -ENOMEM;
 		goto err;
 	}
 	if (!slim->ctrl) {
-		ad_loge("Error, no SLIMBUS control data\n");
+		pr_err("Error, no SLIMBUS control data\n");
 		ret = -EINVAL;
 		goto err_codec;
 	}
@@ -1735,12 +1734,12 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 
 	ret = wcd9xxx_init_supplies(wcd9xxx, pdata);
 	if (ret) {
-		ad_loge("%s: Fail to init Codec supplies %d\n", __func__, ret);
+		pr_err("%s: Fail to init Codec supplies %d\n", __func__, ret);
 		goto err_codec;
 	}
 	ret = wcd9xxx_enable_static_supplies(wcd9xxx, pdata);
 	if (ret) {
-		ad_loge("%s: Fail to enable Codec pre-reset supplies\n",
+		pr_err("%s: Fail to enable Codec pre-reset supplies\n",
 		       __func__);
 		goto err_codec;
 	}
@@ -1748,7 +1747,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 
 	ret = wcd9xxx_reset(wcd9xxx);
 	if (ret) {
-		ad_loge("%s: Resetting Codec failed\n", __func__);
+		pr_err("%s: Resetting Codec failed\n", __func__);
 		goto err_supplies;
 	}
 
@@ -1756,7 +1755,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 				     ARRAY_SIZE(wcd9xxx->slim->e_addr),
 				     &wcd9xxx->slim->laddr);
 	if (ret) {
-		ad_loge("%s: failed to get slimbus %s logical address: %d\n",
+		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
 		goto err_reset;
 	}
@@ -1770,7 +1769,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 
 	ret = slim_add_device(slim->ctrl, wcd9xxx->slim_slave);
 	if (ret) {
-		ad_loge("%s: error, adding SLIMBUS device failed\n", __func__);
+		pr_err("%s: error, adding SLIMBUS device failed\n", __func__);
 		goto err_reset;
 	}
 
@@ -1779,7 +1778,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 				     ARRAY_SIZE(wcd9xxx->slim_slave->e_addr),
 				     &wcd9xxx->slim_slave->laddr);
 	if (ret) {
-		ad_loge("%s: failed to get slimbus %s logical address: %d\n",
+		pr_err("%s: failed to get slimbus %s logical address: %d\n",
 		       __func__, wcd9xxx->slim->name, ret);
 		goto err_slim_add;
 	}
@@ -1788,7 +1787,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 
 	ret = wcd9xxx_device_init(wcd9xxx);
 	if (ret) {
-		ad_loge("%s: error, initializing device failed\n", __func__);
+		pr_err("%s: error, initializing device failed\n", __func__);
 		goto err_slim_add;
 	}
 #ifdef CONFIG_DEBUG_FS
@@ -1848,11 +1847,11 @@ static int wcd9xxx_device_up(struct wcd9xxx *wcd9xxx)
 		return 0;
 	}
 
-	ad_dev_logn(wcd9xxx->dev, "%s: codec bring up\n", __func__);
+	dev_info(wcd9xxx->dev, "%s: codec bring up\n", __func__);
 	wcd9xxx_bring_up(wcd9xxx);
 	ret = wcd9xxx_irq_init(wcd9xxx_res);
 	if (ret) {
-		ad_loge("%s: wcd9xx_irq_init failed : %d\n", __func__, ret);
+		pr_err("%s: wcd9xx_irq_init failed : %d\n", __func__, ret);
 	} else {
 		if (wcd9xxx->post_reset)
 			ret = wcd9xxx->post_reset(wcd9xxx);
@@ -1865,16 +1864,16 @@ static int wcd9xxx_slim_device_reset(struct slim_device *sldev)
 	int ret;
 	struct wcd9xxx *wcd9xxx = slim_get_devicedata(sldev);
 	if (!wcd9xxx) {
-		ad_loge("%s: wcd9xxx is NULL\n", __func__);
+		pr_err("%s: wcd9xxx is NULL\n", __func__);
 		return -EINVAL;
 	}
 
-	ad_dev_logn(wcd9xxx->dev, "%s: device reset\n", __func__);
+	dev_info(wcd9xxx->dev, "%s: device reset\n", __func__);
 	if (wcd9xxx->slim_device_bootup)
 		return 0;
 	ret = wcd9xxx_reset(wcd9xxx);
 	if (ret)
-		ad_dev_loge(wcd9xxx->dev, "%s: Resetting Codec failed\n", __func__);
+		dev_err(wcd9xxx->dev, "%s: Resetting Codec failed\n", __func__);
 
 	return ret;
 }
@@ -1883,10 +1882,10 @@ static int wcd9xxx_slim_device_up(struct slim_device *sldev)
 {
 	struct wcd9xxx *wcd9xxx = slim_get_devicedata(sldev);
 	if (!wcd9xxx) {
-		ad_loge("%s: wcd9xxx is NULL\n", __func__);
+		pr_err("%s: wcd9xxx is NULL\n", __func__);
 		return -EINVAL;
 	}
-	ad_dev_logn(wcd9xxx->dev, "%s: slim device up\n", __func__);
+	dev_info(wcd9xxx->dev, "%s: slim device up\n", __func__);
 	return wcd9xxx_device_up(wcd9xxx);
 }
 
@@ -1895,13 +1894,13 @@ static int wcd9xxx_slim_device_down(struct slim_device *sldev)
 	struct wcd9xxx *wcd9xxx = slim_get_devicedata(sldev);
 
 	if (!wcd9xxx) {
-		ad_loge("%s: wcd9xxx is NULL\n", __func__);
+		pr_err("%s: wcd9xxx is NULL\n", __func__);
 		return -EINVAL;
 	}
 	wcd9xxx_irq_exit(&wcd9xxx->core_res);
 	if (wcd9xxx->dev_down)
 		wcd9xxx->dev_down(wcd9xxx);
-	ad_dev_logd(wcd9xxx->dev, "%s: device down\n", __func__);
+	dev_dbg(wcd9xxx->dev, "%s: device down\n", __func__);
 	return 0;
 }
 
@@ -2112,39 +2111,39 @@ static int __init wcd9xxx_init(void)
 
 	ret[0] = slim_driver_register(&tabla_slim_driver);
 	if (ret[0])
-		ad_loge("Failed to register tabla SB driver: %d\n", ret[0]);
+		pr_err("Failed to register tabla SB driver: %d\n", ret[0]);
 
 	ret[1] = slim_driver_register(&tabla2x_slim_driver);
 	if (ret[1])
-		ad_loge("Failed to register tabla2x SB driver: %d\n", ret[1]);
+		pr_err("Failed to register tabla2x SB driver: %d\n", ret[1]);
 
 	ret[2] = i2c_add_driver(&tabla_i2c_driver);
 	if (ret[2])
-		ad_loge("failed to add the tabla2x I2C driver: %d\n", ret[2]);
+		pr_err("failed to add the tabla2x I2C driver: %d\n", ret[2]);
 
 	ret[3] = slim_driver_register(&sitar_slim_driver);
 	if (ret[3])
-		ad_loge("Failed to register sitar SB driver: %d\n", ret[3]);
+		pr_err("Failed to register sitar SB driver: %d\n", ret[3]);
 
 	ret[4] = slim_driver_register(&sitar1p1_slim_driver);
 	if (ret[4])
-		ad_loge("Failed to register sitar SB driver: %d\n", ret[4]);
+		pr_err("Failed to register sitar SB driver: %d\n", ret[4]);
 
 	ret[5] = slim_driver_register(&taiko_slim_driver);
 	if (ret[5])
-		ad_loge("Failed to register taiko SB driver: %d\n", ret[5]);
+		pr_err("Failed to register taiko SB driver: %d\n", ret[5]);
 
 	ret[6] = i2c_add_driver(&wcd9xxx_i2c_driver);
 	if (ret[6])
-		ad_loge("failed to add the wcd9xxx I2C driver: %d\n", ret[6]);
+		pr_err("failed to add the wcd9xxx I2C driver: %d\n", ret[6]);
 
 	ret[7] = slim_driver_register(&tapan_slim_driver);
 	if (ret[7])
-		ad_loge("Failed to register tapan SB driver: %d\n", ret[7]);
+		pr_err("Failed to register tapan SB driver: %d\n", ret[7]);
 
 	ret[8] = slim_driver_register(&tomtom_slim_driver);
 	if (ret[8])
-		ad_loge("Failed to register tomtom SB driver: %d\n", ret[8]);
+		pr_err("Failed to register tomtom SB driver: %d\n", ret[8]);
 
 	for (i = 0; i < NUM_WCD9XXX_REG_RET; i++) {
 		if (ret[i])
