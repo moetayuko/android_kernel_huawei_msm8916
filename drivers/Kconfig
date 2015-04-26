@@ -192,6 +192,4 @@ source "drivers/hw_fac_info/Kconfig"
 
 source "drivers/huawei/Kconfig"
 
-source "drivers/cpu_stress/Kconfig"
-
 endmenu

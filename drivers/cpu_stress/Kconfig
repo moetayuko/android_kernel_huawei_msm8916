@@ -1,3 +1,0 @@
-config CPU_STRESS_TEST
-	bool "CPU stress test support"
-	default n
