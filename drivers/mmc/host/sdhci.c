@@ -44,28 +44,8 @@
 #define SDHCI_USE_LEDS_CLASS
 #endif
 
-#ifdef CONFIG_HUAWEI_KERNEL
-extern int mmc_debug_mask;
-module_param_named(debug_mask, mmc_debug_mask, int, 
-				   S_IRUGO | S_IWUSR | S_IWGRP);
-
-#define HUAWEI_DBG(fmt, args...) \
-	do { \
-	    if (mmc_debug_mask) \
-		    printk(fmt, args); \
-	} while (0)
-#endif /* CONFIG_HUAWEI_KERNEL */
-
-#ifdef CONFIG_HUAWEI_KERNEL
-extern void set_always_on(struct sdhci_host *host, int ret);
-#endif
-
 #define MAX_TUNING_LOOP 40
-#ifdef CONFIG_HUAWEI_KERNEL
-static struct kmem_cache *mmc_area_cachep __read_mostly;
-static struct scatterlist	*cur_sg = NULL;
-static struct scatterlist	*prev_sg = NULL;
-#endif
+
 static unsigned int debug_quirks = 0;
 static unsigned int debug_quirks2;
 
@@ -1169,9 +1149,6 @@ static void sdhci_finish_data(struct sdhci_host *host)
 }
 
 #define SDHCI_REQUEST_TIMEOUT	10 /* Default request timeout in seconds */
-#ifdef CONFIG_HUAWEI_KERNEL
-#define SDHCI_REQUEST_SD_TIMEOUT	3
-#endif
 
 static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 {
@@ -1206,28 +1183,11 @@ static void sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 		mdelay(1);
 	}
 
-	/*for SD card we change the timeout time from 10s to 3s,which can improve suspending slowly.*/
-#ifdef CONFIG_HUAWEI_KERNEL
-	if(!strcmp(mmc_hostname(host->mmc), "mmc1")) {
-		mod_timer(&host->timer, jiffies + SDHCI_REQUEST_SD_TIMEOUT * HZ);
-		if (cmd->cmd_timeout_ms > SDHCI_REQUEST_SD_TIMEOUT * MSEC_PER_SEC)
-			mod_timer(&host->timer, jiffies +
-					(msecs_to_jiffies(cmd->cmd_timeout_ms * 2)));
-
-	} else {
-		mod_timer(&host->timer, jiffies + SDHCI_REQUEST_TIMEOUT * HZ);
-		if (cmd->cmd_timeout_ms > SDHCI_REQUEST_TIMEOUT * MSEC_PER_SEC)
-			mod_timer(&host->timer, jiffies +
-					(msecs_to_jiffies(cmd->cmd_timeout_ms * 2)));
-
-	}
-#else
 	mod_timer(&host->timer, jiffies + SDHCI_REQUEST_TIMEOUT * HZ);
 
 	if (cmd->cmd_timeout_ms > SDHCI_REQUEST_TIMEOUT * MSEC_PER_SEC)
 		mod_timer(&host->timer, jiffies +
 				(msecs_to_jiffies(cmd->cmd_timeout_ms * 2)));
-#endif
 
 	host->cmd = cmd;
 
@@ -1751,11 +1711,6 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	host->mrq = mrq;
 
-#ifdef CONFIG_HUAWEI_KERNEL 
-    HUAWEI_DBG("HUAWEI %s: starting CMD%u arg %08x flags %08x\n",
-		 mmc_hostname(host->mmc), mrq->cmd->opcode,
-		 mrq->cmd->arg, mrq->cmd->flags);
-#endif
 	if (!present || host->flags & SDHCI_DEVICE_DEAD) {
 		host->mrq->cmd->error = -ENOMEDIUM;
 		tasklet_schedule(&host->finish_tasklet);
@@ -1804,12 +1759,7 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		else
 			sdhci_send_command(host, mrq->cmd);
 	}
-#ifdef CONFIG_HUAWEI_KERNEL
-    HUAWEI_DBG("HUAWEI %s: req end (CMD%u): %08x %08x %08x %08x\n",
-			mmc_hostname(host->mmc), mrq->cmd->opcode,
-			mrq->cmd->resp[0], mrq->cmd->resp[1],
-			mrq->cmd->resp[2], mrq->cmd->resp[3]);
-#endif 
+
 	mmiowb();
 	spin_unlock_irqrestore(&host->lock, flags);
 }
@@ -2091,13 +2041,7 @@ static void sdhci_do_set_ios(struct sdhci_host *host, struct mmc_ios *ios)
 static void sdhci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
-#ifdef CONFIG_HUAWEI_KERNEL 
-    HUAWEI_DBG("%s: clock %uHz busmode %u powermode %u cs %u Vdd %u "
-		"width %u timing %u\n",
-		 mmc_hostname(mmc), ios->clock, ios->bus_mode,
-		 ios->power_mode, ios->chip_select, ios->vdd,
-		 ios->bus_width, ios->timing);
-#endif
+
 	sdhci_runtime_pm_get(host);
 	sdhci_do_set_ios(host, ios);
 	sdhci_runtime_pm_put(host);
@@ -2137,9 +2081,6 @@ static int sdhci_get_cd(struct mmc_host *mmc)
 	sdhci_runtime_pm_get(host);
 	ret = sdhci_do_get_cd(host);
 	sdhci_runtime_pm_put(host);
-#ifdef CONFIG_HUAWEI_KERNEL
-    set_always_on(host,ret && (mmc->unused));
-#endif
 	return ret;
 }
 
@@ -2869,14 +2810,7 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask)
 		    (command != MMC_SEND_TUNING_BLOCK_HS400) &&
 		    (command != MMC_SEND_TUNING_BLOCK_HS200) &&
 		    (command != MMC_SEND_TUNING_BLOCK))
-#ifdef CONFIG_HUAWEI_KERNEL
-			{
 				host->flags |= SDHCI_NEEDS_RETUNING;
-				sdhci_dumpregs(host);
-			}
-#else
-				host->flags |= SDHCI_NEEDS_RETUNING;
-#endif
 		tasklet_schedule(&host->finish_tasklet);
 		return;
 	}
@@ -3463,18 +3397,7 @@ static int sdhci_is_adma2_64bit(struct sdhci_host *host)
 	return 0;
 }
 #endif
-#ifdef CONFIG_HUAWEI_KERNEL
-struct scatterlist* sdhci_get_cur_sg(void){
 
-	return cur_sg;
-}
-EXPORT_SYMBOL(sdhci_get_cur_sg);
-
-struct scatterlist* sdhci_get_prev_sg(void){
-	return prev_sg;
-}
-EXPORT_SYMBOL(sdhci_get_prev_sg);
-#endif
 int sdhci_add_host(struct sdhci_host *host)
 {
 	struct mmc_host *mmc;
@@ -3482,9 +3405,7 @@ int sdhci_add_host(struct sdhci_host *host)
 	u32 max_current_caps;
 	unsigned int ocr_avail;
 	int ret;
-#ifdef CONFIG_HUAWEI_KERNEL
-	u32 max_segs_size = 0;
-#endif
+
 	WARN_ON(host == NULL);
 	if (host == NULL)
 		return -EINVAL;
@@ -4020,45 +3941,6 @@ int sdhci_add_host(struct sdhci_host *host)
 
 	if (host->quirks2 & SDHCI_QUIRK2_IGN_DATA_END_BIT_ERROR)
 		sdhci_clear_set_irqs(host, SDHCI_INT_DATA_END_BIT, 0);
-#ifdef CONFIG_HUAWEI_KERNEL
-	/*add slab cache for mmc1(sdcard)*/
-	if(!strcmp(mmc_hostname(mmc), "mmc1")){
-		max_segs_size = mmc->max_segs*sizeof(struct scatterlist);
-
-		mmc_area_cachep= kmem_cache_create("mmc_area_cache",
-			max_segs_size,
-				0, 0, NULL);
-
-		if(unlikely(!mmc_area_cachep)) {
-			printk(KERN_ERR "sdhci: failed to create slab cache for sdcard\n");
-			goto cache_fail_create;
-		}
-		pr_info("created %s cache size=%d bytes\n",mmc_hostname(mmc), max_segs_size);
-
-		/*malloc cache for sdcard*/
-		cur_sg = kmem_cache_zalloc(mmc_area_cachep, GFP_KERNEL);
-		if(NULL == cur_sg){
-			printk(KERN_ERR "cur_sg cache alloc failed\n");
-			goto cache_fail_create;
-		}
-		pr_info("cur cache alloc sucess\n");
-
-		prev_sg = kmem_cache_zalloc(mmc_area_cachep, GFP_KERNEL);
-		if (NULL == prev_sg){
-			printk(KERN_ERR "+++cache alloc failed\n");
-
-			/*free cur_sg cache due to malloc fail*/
-			kmem_cache_free(mmc_area_cachep, cur_sg);
-
-			/*set pointer to NULL*/
-			cur_sg = NULL;
-			prev_sg = NULL;
-			goto cache_fail_create;
-		}
-		pr_info("pre cache alloc sucess\n");
-	}
-cache_fail_create:
-#endif
 	pr_info("%s: SDHCI controller on %s [%s] using %s\n",
 		mmc_hostname(mmc), host->hw_name, dev_name(mmc_dev(mmc)),
 		(host->flags & SDHCI_USE_ADMA) ?

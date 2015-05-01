@@ -20,18 +20,10 @@
 #include <linux/pm_runtime.h>
 #include <linux/reboot.h>
 
-#ifdef CONFIG_HW_MMC_TEST
-#include <linux/export.h>
-#endif
-
 #include "core.h"
 #include "bus.h"
 #include "mmc_ops.h"
 #include "sd_ops.h"
-
-#ifdef CONFIG_HUAWEI_EMMC_DSM
-#include <linux/mmc/dsm_emmc.h>
-#endif
 
 static const unsigned int tran_exp[] = {
 	10000,		100000,		1000000,	10000000,
@@ -67,11 +59,6 @@ static const unsigned int tacc_mant[] = {
 	})
 
 static const struct mmc_fixup mmc_fixups[] = {
-#ifdef CONFIG_HUAWEI_KERNEL
-	/* Disable HPI function for Hynix EMMC Jedec 4.5*/
-	MMC_FIXUP_EXT_CSD_REV(CID_NAME_ANY, CID_MANFID_HYNIX,
-			      0x014a, add_quirk, MMC_QUIRK_BROKEN_HPI, 6),
-#endif
 	/*
 	 * Certain Hynix eMMC 4.41 cards might get broken when HPI feature
 	 * is used so disable the HPI feature for such buggy cards.
@@ -311,11 +298,7 @@ static void mmc_select_card_type(struct mmc_card *card)
 /*
  * Decode extended CSD.
  */
-#ifdef CONFIG_HW_MMC_TEST
-int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
-#else
 static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
-#endif
 {
 	int err = 0, idx;
 	unsigned int part_size;
@@ -617,9 +600,6 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 out:
 	return err;
 }
-#ifdef CONFIG_HW_MMC_TEST
-EXPORT_SYMBOL_GPL(mmc_read_ext_csd);
-#endif
 
 static inline void mmc_free_ext_csd(u8 *ext_csd)
 {
@@ -684,26 +664,6 @@ out:
 	mmc_free_ext_csd(bw_ext_csd);
 	return err;
 }
-#ifdef CONFIG_HUAWEI_KERNEL
-static ssize_t mmc_samsung_smart(struct device *dev,
-                                            struct device_attribute *attr, char *buf)
-{
-    struct mmc_card *card = mmc_dev_to_card(dev);
-    unsigned int size = PAGE_SIZE;
-    unsigned int wrote;
-
-    if (card->quirks & MMC_QUIRK_SAMSUNG_SMART)
-    {
-        return mmc_samsung_smart_handle(card, buf);
-    }
-    else
-    {
-        wrote = scnprintf(buf, size, "This eMMC is not provided by Samsung, only Samsung eMMC support this feature!\n");
-        return wrote;
-    }
-}
-static DEVICE_ATTR(samsung_smart, S_IRUGO, mmc_samsung_smart, NULL);
-#endif /* CONFIG_HUAWEI_KERNEL */
 
 MMC_DEV_ATTR(cid, "%08x%08x%08x%08x\n", card->raw_cid[0], card->raw_cid[1],
 	card->raw_cid[2], card->raw_cid[3]);
@@ -742,9 +702,6 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_enhanced_area_size.attr,
 	&dev_attr_raw_rpmb_size_mult.attr,
 	&dev_attr_rel_sectors.attr,
-#ifdef CONFIG_HUAWEI_KERNEL
-    &dev_attr_samsung_smart.attr,
-#endif
 	NULL,
 };
 
@@ -1341,14 +1298,6 @@ static int mmc_reboot_notify(struct notifier_block *notify_block,
 	return NOTIFY_OK;
 }
 
-#ifdef CONFIG_HUAWEI_KERNEL 
-static const struct mmc_fixup mmc_fixups_smart_report[] = {
-    /* Provide access to Samsung's e-MMC Smart Report via sysfs */
-    MMC_FIXUP(CID_NAME_ANY, 0x15, CID_OEMID_ANY, add_quirk_mmc, MMC_QUIRK_SAMSUNG_SMART),
-
-    END_FIXUP
-    };
-#endif
 /*
  * Activate highest bus speed mode supported by both host and card.
  * On failure activate the next supported highest bus speed mode.
@@ -1507,13 +1456,6 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 					mmc_hostname(host), __func__, err);
 			goto free_card;
 		}
-
-#ifdef CONFIG_HUAWEI_KERNEL
-		/* Detect on first access quirky cards that need help when
-		* powered-on
-		*/
-		mmc_fixup_device(card, mmc_fixups_smart_report);
-#endif
 	}
 
 	/*
@@ -1776,11 +1718,7 @@ err:
 	return err;
 }
 
-#ifdef CONFIG_HUAWEI_KERNEL
-int mmc_can_poweroff_notify(const struct mmc_card *card)
-#else
 static int mmc_can_poweroff_notify(const struct mmc_card *card)
-#endif
 {
 	return card &&
 		mmc_card_mmc(card) &&
@@ -1891,12 +1829,7 @@ static void mmc_detect(struct mmc_host *host)
 /*
  * Suspend callback from host.
  */
-
-#ifdef CONFIG_HUAWEI_KERNEL
-int mmc_suspend(struct mmc_host *host)
-#else
 static int mmc_suspend(struct mmc_host *host)
-#endif
 {
 	int err = 0;
 
@@ -2162,161 +2095,3 @@ err:
 
 	return err;
 }
-
-#ifdef CONFIG_HUAWEI_EMMC_DSM
-static unsigned int g_last_msg_code=0; /*last sent error code*/
-static unsigned int g_last_msg_count=0; /*last sent the code count*/
-#define ERR_MAX_COUNT 10
-/*
- * first send the err msg to /dev/exception node.
- * if it produces lots of reduplicated msg, will just record the times
- * for every error, it's better to set max times
- * @code: error number
- * @err_msg: error message
- * @return: 0:don't report, 1: report
- */
-static int dsm_emmc_process_log(int code, char *err_msg)
-{
-	int ret=0;
-	/*the MAX times of erevy err code*/
-	static int vdet_err_max_count = ERR_MAX_COUNT;
-#ifndef CONFIG_HUAWEI_EMMC_DSM_ONLY_VDET
-	static int system_w_err_max_count = ERR_MAX_COUNT;
-	static int erase_err_max_count = ERR_MAX_COUNT;
-	static int send_cxd_err_max_count = ERR_MAX_COUNT;
-	static int emmc_read_err_max_count = ERR_MAX_COUNT;
-	static int emmc_write_err_max_count = ERR_MAX_COUNT;
-#endif
-
-	/*filter: if it has the same msg code with last, record err code&count*/
-    if (g_last_msg_code == code) {
-		ret = 0;
-		g_last_msg_count++;
-    } else {
-		g_last_msg_code = code;
-		g_last_msg_count = 0;
-		ret = 1;
-    }
-
-	/*restrict count of every error, note:deplicated msg donesn't its count*/
-	if(1 == ret){
-		switch (code){
-			case DSM_EMMC_VDET_ERR:
-				if(0 < vdet_err_max_count){
-					vdet_err_max_count--;
-					ret = 1;
-				}else{
-					ret = 0;
-				}
-				break;
-#ifndef CONFIG_HUAWEI_EMMC_DSM_ONLY_VDET
-			case DSM_SYSTEM_W_ERR:
-				if(0 < system_w_err_max_count){
-					system_w_err_max_count--;
-					ret = 1;
-				}else{
-					ret = 0;
-				}
-				break;
-			case DSM_EMMC_ERASE_ERR:
-				if(0 < erase_err_max_count){
-					erase_err_max_count--;
-					ret = 1;
-				}else{
-					ret = 0;
-				}
-				break;
-			case DSM_EMMC_SEND_CXD_ERR:
-				if(0 < send_cxd_err_max_count){
-					send_cxd_err_max_count--;
-					ret = 1;
-				}else{
-					ret = 0;
-				}
-				break;
-			case DSM_EMMC_READ_ERR:
-				if(0 < emmc_read_err_max_count){
-					emmc_read_err_max_count--;
-					ret = 1;
-				}else{
-					ret = 0;
-				}
-				break;
-			case DSM_EMMC_WRITE_ERR:
-				if(0 < emmc_write_err_max_count){
-					emmc_write_err_max_count--;
-					ret = 1;
-				}else{
-					ret = 0;
-				}
-				break;
-#endif
-			default:
-				ret = 0;
-				break;
-		}
-	}
-
-	return ret;
-}
-
-/*
- * Put error message into buffer.
- * @code: error number
- * @err_msg: error message
- * @return: 0:no buffer to report, 1: report
- */
-int dsm_emmc_get_log(void *card, int code, char *err_msg)
-{
-	int ret = 0;
-	int buff_size = sizeof(g_emmc_dsm_log.emmc_dsm_log);
-	char *dsm_log_buff = g_emmc_dsm_log.emmc_dsm_log;
-	struct mmc_card * card_dev=(struct mmc_card * )card;
-	unsigned int last_msg_code = g_last_msg_code;
-	unsigned int last_msg_count = g_last_msg_count;
-
-	if(dsm_emmc_process_log(code, err_msg)){
-		/*clear global buffer*/
-		memset(g_emmc_dsm_log.emmc_dsm_log,0,buff_size);
-		/*print duplicated code and its count */
-		if((0 < last_msg_count) && (0 == g_last_msg_count)){
-			ret = snprintf(dsm_log_buff,buff_size,"last Err num: %d, the times: %d\n",last_msg_code, last_msg_count + 1);
-			dsm_log_buff += ret;
-			buff_size -= ret;
-			last_msg_code = 0;
-			last_msg_count = 0;
-		}
-
-		ret = snprintf(dsm_log_buff,buff_size,"Err num: %d, %s\n",code, err_msg);
-		dsm_log_buff += ret;
-		buff_size -= ret;
-		pr_info("Err num: %d, %s\n",code, err_msg);
-
-		/*print card CID info*/
-		if(NULL != card_dev){
-			if(sizeof(struct mmc_cid) < buff_size){
-				ret = snprintf(dsm_log_buff,buff_size,
-					"Card's cid:%08x%08x%08x%08x\n\n", card_dev->raw_cid[0], card_dev->raw_cid[1],
-					card_dev->raw_cid[2], card_dev->raw_cid[3]);
-				pr_info("Card's cid:%08x%08x%08x%08x\n\n", card_dev->raw_cid[0], card_dev->raw_cid[1],
-					card_dev->raw_cid[2], card_dev->raw_cid[3]);
-			}else{
-				printk(KERN_ERR "%s:g_emmc_dsm_log Buff size is not enough\n", __FUNCTION__);
-				printk(KERN_ERR "%s:eMMC error message is: %s\n", __FUNCTION__, err_msg);
-			}
-		}
-		pr_debug("DSM_DEBUG %s\n",g_emmc_dsm_log.emmc_dsm_log);
-
-		return 1;
-	}else{
-		printk("%s:Err num: %d, %s\n",__FUNCTION__, code, err_msg);
-		if(NULL != card_dev){
-			pr_info("Card's cid:%08x%08x%08x%08x\n\n", card_dev->raw_cid[0], card_dev->raw_cid[1],
-				card_dev->raw_cid[2], card_dev->raw_cid[3]);
-		}
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(dsm_emmc_get_log);
-#endif
