@@ -35,10 +35,6 @@
 #include <linux/huawei_apanic.h>
 #endif
 
-#ifdef CONFIG_HUAWEI_FEATURE_NFF
-#include <linux/huawei_boot_log.h>
-#endif
-
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
 #define EMERGENCY_DLOAD_MAGIC3    0x77777777
@@ -128,35 +124,6 @@ void clear_dload_mode(void)
 }
 #endif
 
-#ifdef CONFIG_HUAWEI_FEATURE_NFF
-extern void *boot_log_virt;
-static void clear_bootup_flag(void)
-{
-
-	uint32_t *reboot_flag_addr = NULL;
-
-	if (NULL == boot_log_virt) 
-		reboot_flag_addr = (uint32_t *)ioremap_nocache(HUAWEI_BOOT_LOG_ADDR,0x100000);
-	else 
-		reboot_flag_addr = boot_log_virt;
-
-	if(NULL != reboot_flag_addr)
-	{
-		uint32_t *magic    = (uint32_t*)(reboot_flag_addr);
-
-		/* If by any chance (version upgreade) the addresses are changed,
-		 * We might crash. Lets avoid that difficult to debug scenrio.
-		 * We trading it off with the non-availability of NFF logs*/
-		if (*magic != HUAWEI_BOOT_MAGIC_NUMBER) {
-			pr_notice("NFF: Invalid magic number %x. Disabled NFF\n", *magic);
-			return;
-		}
-		__raw_writel( 0x00000000, reboot_flag_addr);
-		mb();
-	}
-	return;
-}
-#endif
 static bool get_dload_mode(void)
 {
 	return dload_mode_enabled;
@@ -268,10 +235,7 @@ static void msm_restart_prepare(const char *cmd)
    __raw_writel(RESTART_FLAG_MAGIC_NUM, restart_flag_addr);
   }
 #endif
-
-#ifdef CONFIG_HUAWEI_FEATURE_NFF
-	clear_bootup_flag();
-#endif     
+    
 #ifdef CONFIG_HUAWEI_KERNEL
 	/* Hard reset the PMIC unless memory contents must be maintained. */
 	if (in_panic || get_dload_mode()|| (cmd != NULL && cmd[0] != '\0'))

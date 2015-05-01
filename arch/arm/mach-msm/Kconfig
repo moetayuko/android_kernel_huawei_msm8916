@@ -1091,12 +1091,6 @@ config HUAWEI_KERNEL_DEBUG
 	default n
 	help
 	  Enable sysrq, dump mode and some debug masks by default.
-config HUAWEI_FEATURE_NFF
-	bool "save bootup log to log partition if long power event"
-	depends on HUAWEI_KERNEL
-        default n
-	help
-	  in debug mode,you can use sysrq and dump mode
 
 config HUAWEI_THERMAL
 	bool "Use huawei thermal code"
