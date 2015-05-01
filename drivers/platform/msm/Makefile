@@ -3,7 +3,6 @@
 #
 
 ccflags-y += -Idrivers/misc/
-ccflags-y += -Idrivers/video/msm/mdss/
 
 
 obj-$(CONFIG_MSM_BUS_SCALING) += msm_bus/
