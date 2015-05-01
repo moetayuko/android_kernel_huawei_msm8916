@@ -2730,6 +2730,10 @@ static irqreturn_t i2c_msm_qup_isr(int irq, void *devid)
 	i2c_status  = readl_relaxed(base + QUP_I2C_STATUS);
 	err_flags   = readl_relaxed(base + QUP_ERROR_FLAGS);
 	qup_op      = readl_relaxed(base + QUP_OPERATIONAL);
+	i2c_msm_dbg(ctrl, MSM_DBG,
+	    "IRQ MASTER_STATUS:0x%08x ERROR_FLAGS:0x%08x OPERATIONAL:0x%08x\n",
+	    i2c_status, err_flags, qup_op);
+
 
 	if (i2c_status & QUP_MSTR_STTS_ERR_MASK) {
 		signal_complete = true;
