@@ -36,9 +36,6 @@ static struct qpnp_lbc_chip *global_chip;
 #ifdef CONFIG_HUAWEI_KERNEL
 #include <linux/power/bq24152_charger.h>
 #endif
-#ifdef CONFIG_HW_FEATURE_STORAGE_DIAGNOSE_LOG
-#include <linux/store_log.h>
-#endif
 #define CREATE_MASK(NUM_BITS, POS) \
 	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
 #define LBC_MASK(MSB_BIT, LSB_BIT) \
@@ -4460,36 +4457,6 @@ static void check_charging_status_work(struct work_struct *work)
 		resume_en = chip->resuming_charging;
 		input_current = qpnp_lbc_ibatmax_get(chip);
 
-		if(!bat_present){
-			MSG_WRAPPER(CHARGE_ERROR_BASE|BATTERY_ERR,
-				"vusb %d status %d capacity %d present %d vbat %d temp %d chg_type %d current %d "
-				"bat_sts %d chg_sts %d usb_sts %d chg_ctrl %d suspend_en %d resume_en %d input %d\n",
-				vusb_uv, cur_status, batt_level, bat_present, vbat_uv, batt_temp, chg_type, bat_current,
-				bat_sts, chg_sts, usb_sts, chg_ctrl, suspend_en, resume_en, input_current);
-		}
-		else if(batt_temp >= chip->cfg_hot_bat_decidegc || batt_temp <= chip->cfg_cold_bat_decidegc){
-			MSG_WRAPPER(CHARGE_ERROR_BASE|TMEPERATURE_ERR|TMEPERATURE_OVERFLOW,
-				"vusb %d status %d capacity %d present %d vbat %d temp %d chg_type %d current %d "
-				"bat_sts %d chg_sts %d usb_sts %d chg_ctrl %d suspend_en %d resume_en %d input %d\n",
-				vusb_uv, cur_status, batt_level, bat_present, vbat_uv, batt_temp, chg_type, bat_current,
-				bat_sts, chg_sts, usb_sts, chg_ctrl, suspend_en, resume_en, input_current);
-		}
-		else if(batt_temp < chip->cfg_hot_bat_decidegc && batt_temp >= chip->cfg_warm_bat_decidegc
-			&& vbat_uv >= chip->cfg_warm_bat_mv){
-			MSG_WRAPPER(CHARGE_ERROR_BASE|TMEPERATURE_ERR|TMEPERATURE_LIMIT,
-				"vusb %d status %d capacity %d present %d vbat %d temp %d chg_type %d current %d "
-				"bat_sts %d chg_sts %d usb_sts %d chg_ctrl %d suspend_en %d resume_en %d input %d\n",
-				vusb_uv, cur_status, batt_level, bat_present, vbat_uv, batt_temp, chg_type, bat_current,
-				bat_sts, chg_sts, usb_sts, chg_ctrl, suspend_en, resume_en, input_current);
-		}
-		else{
-			MSG_WRAPPER(CHARGE_ERROR_BASE,
-				"vusb %d status %d capacity %d present %d vbat %d temp %d chg_type %d current %d "
-				"bat_sts %d chg_sts %d usb_sts %d chg_ctrl %d suspend_en %d resume_en %d input %d\n",
-				vusb_uv, cur_status, batt_level, bat_present, vbat_uv, batt_temp, chg_type, bat_current,
-				bat_sts, chg_sts, usb_sts, chg_ctrl, suspend_en, resume_en, input_current);
-		}
-
 		pr_info("vusb %d status %d capacity %d present %d vbat %d temp %d chg_type %d current %d "
 			"bat_sts %d chg_sts %d usb_sts %d chg_ctrl %d suspend_en %d resume_en %d input %d\n",
 			vusb_uv, cur_status, batt_level, bat_present, vbat_uv, batt_temp, chg_type, bat_current,
@@ -4504,35 +4471,6 @@ static void check_charging_status_work(struct work_struct *work)
 		/* read bq2415x reg0 to reg4 values */
 		for(reg = BQ2415X_REG_STATUS; reg <= BQ2415X_REG_CURRENT; reg++){
 			reg_value[reg] = get_bq2415x_reg_values(reg);
-		}
-		if(!bat_present){
-			MSG_WRAPPER(CHARGE_ERROR_BASE|BATTERY_ERR,
-				"vusb %d temp %d status %d capacity %d present %d vbat %d current %d 0x%x 0x%x 0x%x 0x%x 0x%x\n",
-				vusb_uv, batt_temp, cur_status, batt_level, bat_present, vbat_uv, bat_current,
-				reg_value[0], reg_value[1], reg_value[2], reg_value[3], 
-				reg_value[4]);
-		}
-		else if(batt_temp >= chip->cfg_hot_bat_decidegc || batt_temp <= chip->cfg_cold_bat_decidegc){
-			MSG_WRAPPER(CHARGE_ERROR_BASE|TMEPERATURE_ERR|TMEPERATURE_OVERFLOW,
-				"vusb %d temp %d status %d capacity %d present %d vbat %d current %d 0x%x 0x%x 0x%x 0x%x 0x%x\n",
-				vusb_uv, batt_temp, cur_status, batt_level, bat_present, vbat_uv, bat_current,
-				reg_value[0], reg_value[1], reg_value[2], reg_value[3], 
-				reg_value[4]);
-		}
-		else if(batt_temp < chip->cfg_hot_bat_decidegc && batt_temp >= chip->cfg_warm_bat_decidegc
-			&& vbat_uv >= chip->cfg_warm_bat_mv){
-			MSG_WRAPPER(CHARGE_ERROR_BASE|TMEPERATURE_ERR|TMEPERATURE_LIMIT,
-				"vusb %d temp %d status %d capacity %d present %d vbat %d current %d 0x%x 0x%x 0x%x 0x%x 0x%x\n",
-				vusb_uv, batt_temp, cur_status, batt_level, bat_present, vbat_uv, bat_current,
-				reg_value[0], reg_value[1], reg_value[2], reg_value[3], 
-				reg_value[4]);
-		}
-		else{
-			MSG_WRAPPER(CHARGE_ERROR_BASE,
-				"vusb %d temp %d status %d capacity %d present %d vbat %d current %d 0x%x 0x%x 0x%x 0x%x 0x%x\n",
-				vusb_uv, batt_temp, cur_status, batt_level, bat_present, vbat_uv, bat_current,
-				reg_value[0], reg_value[1], reg_value[2], reg_value[3], 
-				reg_value[4]);
 		}
 
 		pr_info("vusb %d temp %d status %d capacity %d present %d vbat %d current %d 0x%x 0x%x 0x%x 0x%x 0x%x\n",
