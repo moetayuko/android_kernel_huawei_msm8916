@@ -166,6 +166,7 @@ enum {
 	SMEM_NUM_ITEMS,
 };
 
+#ifdef  CONFIG_HUAWEI_KERNEL
 typedef struct
 {
     unsigned int lpddrID;                  /* DDR ID */
@@ -174,12 +175,11 @@ typedef struct
 #ifdef CONFIG_HUAWEI_DEBUG_MODE    
     unsigned int huawei_debug;
 #endif
-#ifdef  CONFIG_HUAWEI_KERNEL
     unsigned int pwrkpd_reset;
-#endif
     unsigned int ddr_scan_status; //modify for ddr scan
+} smem_exten_huawei_paramater;
+#endif
 
-}smem_exten_huawei_paramater;
 #ifdef CONFIG_MSM_SMEM
 void *smem_alloc(unsigned id, unsigned size_in, unsigned to_proc,
 								unsigned flags);
