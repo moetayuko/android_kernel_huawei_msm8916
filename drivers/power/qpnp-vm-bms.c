@@ -3538,10 +3538,8 @@ static int calculate_initial_soc(struct qpnp_bms_chip *chip)
 	if (rc < 0  || chip->dt.cfg_ignore_shutdown_soc)
 		shutdown_soc_invalid = 1;
 #ifdef CONFIG_HUAWEI_DSM
-	else{
+	else
 		shutdown_soc_valid = 1;
-		shutdown_soc = chip->shutdown_soc;
-	}
 #endif
 	if (chip->warm_reset) {
 		/*
