@@ -32,6 +32,11 @@
 #include <qdsp6v2/msm-pcm-routing-v2.h>
 #include "../codecs/msm8x16-wcd.h"
 #include "../codecs/wcd9306.h"
+
+#ifdef CONFIG_HUAWEI_KERNEL
+#include <sound/hw_audio_info.h>
+#endif
+
 #define DRV_NAME "msm8x16-asoc-wcd"
 
 #define BTSCO_RATE_8KHZ 8000
@@ -49,6 +54,17 @@
 #define WCD9XXX_MBHC_DEF_BUTTONS 8
 #define WCD9XXX_MBHC_DEF_RLOADS 5
 #define DEFAULT_MCLK_RATE 9600000
+
+#ifdef CONFIG_HUAWEI_KERNEL
+/*for cherry SPK-PA ext buck-boost ctl*/
+#define DEFUALT_SPK_SWITCH_VALUE 0x0
+#define SPK_ON 1
+#define GPIO_PULL_UP_FLAG 1
+#define GPIO_PULL_DOWN_FLAG 0
+
+static int spk_en_gpio = 0;
+static int ext_spk_switch = DEFUALT_SPK_SWITCH_VALUE;
+#endif
 
 static int msm_btsco_rate = BTSCO_RATE_8KHZ;
 static int msm_btsco_ch = 1;
@@ -735,6 +751,95 @@ static int msm_btsco_rate_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+/* The function to pull up GPIO 0 to enable SPK_EXT_Boost*/
+static void spk_gpio_on(void)
+{
+	int ret = 0;
+
+	if (spk_en_gpio < 0)
+	{
+		pr_err("%s: spk_en_gpio is negative\n", __func__);
+		return;
+	}
+
+	ret = gpio_request(spk_en_gpio, "spk_en_gpio");
+	if (ret)
+	{
+		pr_err("%s: Failed to configure spk enable "
+			"gpio %u\n", __func__, spk_en_gpio);
+		return;
+	}
+
+	pr_debug("%s: Enable SPK gpio %u\n", __func__, spk_en_gpio);
+	gpio_direction_output(spk_en_gpio, GPIO_PULL_UP_FLAG);
+}
+
+/* The function to pull down GPIO 0 to disable SPK_EXT_Boost*/
+static void spk_gpio_off(void)
+{
+	if (spk_en_gpio < 0)
+	{
+		pr_err("%s: spk_en_gpio is negative\n", __func__);
+		return;
+	}
+
+	pr_debug("%s: Pull down and free spk enable gpio %u\n",
+			__func__, spk_en_gpio);
+
+	gpio_direction_output(spk_en_gpio, GPIO_PULL_DOWN_FLAG);
+	gpio_free(spk_en_gpio);
+}
+
+static const char *spk_switch_text[] = {"OFF","ON"};
+
+static const struct soc_enum ext_spk_switch_enum[] = {
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(spk_switch_text),
+						spk_switch_text),
+};
+
+/* The function to get SPK status */
+static int ext_spk_switch_get(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	if(NULL == kcontrol || NULL == ucontrol)
+	{
+		pr_err("%s: input pointer is null\n", __func__);
+	}
+
+	pr_debug("%s: ext_spk_switch = %d\n", __func__,
+			 ext_spk_switch);
+	ucontrol->value.integer.value[0] = ext_spk_switch;
+	return 0;
+}
+
+/* The function to set SPK status */
+static int ext_spk_switch_put(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	int ret = 0;
+	if(NULL == kcontrol || NULL == ucontrol)
+	{
+		pr_err("%s: input pointer is null\n", __func__);
+	}
+	ext_spk_switch = ucontrol->value.integer.value[0];
+	pr_debug("%s: ext_spk_switch = %d"
+			" ucontrol->value.integer.value[0] = %d\n", __func__,
+			ext_spk_switch,
+			 (int) ucontrol->value.integer.value[0]);
+	if(ext_spk_switch)
+	{
+		spk_gpio_on();
+		ret = SPK_ON;
+	}
+	else
+	{
+		spk_gpio_off();
+	}
+	return ret;
+}
+#endif
+
 static const struct soc_enum msm_snd_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, rx_bit_format_text),
 	SOC_ENUM_SINGLE_EXT(2, ter_mi2s_tx_ch_text),
@@ -757,7 +862,10 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 			loopback_mclk_get, loopback_mclk_put),
 	SOC_ENUM_EXT("Internal BTSCO SampleRate", msm_btsco_enum[0],
 		     msm_btsco_rate_get, msm_btsco_rate_put),
-
+#ifdef CONFIG_HUAWEI_KERNEL
+	SOC_ENUM_EXT("SPK",ext_spk_switch_enum[0],
+		     ext_spk_switch_get,ext_spk_switch_put),
+#endif
 };
 
 static int msm8x16_mclk_event(struct snd_soc_dapm_widget *w,
@@ -1059,6 +1167,7 @@ static void *def_msm8x16_wcd_mbhc_cal(void)
 	 * all btn_low corresponds to threshold for current source
 	 * all bt_high corresponds to threshold for Micbias
 	 */
+#ifndef CONFIG_HUAWEI_KERNEL
 	btn_low[0] = 25;
 	btn_high[0] = 25;
 	btn_low[1] = 50;
@@ -1069,6 +1178,19 @@ static void *def_msm8x16_wcd_mbhc_cal(void)
 	btn_high[3] = 112;
 	btn_low[4] = 137;
 	btn_high[4] = 137;
+#else
+	/* reset button range for huawei three button headset */
+	btn_low[0] = 0;
+	btn_high[0] = 87;
+	btn_low[1] = 87;
+	btn_high[1] = 212;
+	btn_low[2] = 212;
+	btn_high[2] = 330;
+	btn_low[3] = 330;
+	btn_high[3] = 330;
+	btn_low[4] = 330;
+	btn_high[4] = 330;
+#endif
 
 	return msm8x16_wcd_cal;
 }
@@ -2040,6 +2162,11 @@ static int msm8x16_asoc_machine_probe(struct platform_device *pdev)
 	int num_strings;
 	int ret, id, i;
 
+#ifdef CONFIG_HUAWEI_KERNEL
+	struct timespec ts = {0, 0};
+	audio_dsm_register();
+#endif
+
 	pdata = devm_kzalloc(&pdev->dev,
 			sizeof(struct msm8916_asoc_mach_data), GFP_KERNEL);
 	if (!pdata) {
@@ -2150,6 +2277,9 @@ static int msm8x16_asoc_machine_probe(struct platform_device *pdev)
 		pr_debug("%s: ext_pa = %d\n", __func__, pdata->ext_pa);
 		pinctrl = devm_pinctrl_get(&pdev->dev);
 		if (IS_ERR(pinctrl)) {
+#ifdef CONFIG_HUAWEI_KERNEL
+			audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_GET_PINCRTL_FAIL);
+#endif
 			pr_err("%s: Unable to get pinctrl handle\n",
 					__func__);
 			return -EINVAL;
@@ -2189,6 +2319,15 @@ static int msm8x16_asoc_machine_probe(struct platform_device *pdev)
 
 	msm8x16_setup_hs_jack(pdev, pdata);
 
+#ifdef CONFIG_HUAWEI_KERNEL
+	/*Get GPIO num for SPK-PA ext buck-boost ctl*/
+	spk_en_gpio = of_get_named_gpio(pdev->dev.of_node,
+					"qcom,spk-buck-boost", 0);
+	if (spk_en_gpio < 0) {
+		pr_err("%s: failed to get   spk_en_gpio\n", __func__);
+	}
+#endif
+
 	card->dev = &pdev->dev;
 	platform_set_drvdata(pdev, card);
 	snd_soc_card_set_drvdata(card, pdata);
@@ -2214,6 +2353,24 @@ static int msm8x16_asoc_machine_probe(struct platform_device *pdev)
 	}
 	return 0;
 err:
+#ifdef CONFIG_HUAWEI_KERNEL
+	if(-EPROBE_DEFER == ret)
+	{
+		get_monotonic_boottime(&ts);
+		if(ts.tv_sec >= DSM_REPORT_DELAY_TIME)
+		{
+			audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_MACH_PROBE_FAIL);
+		}
+	}
+	else if(0 != ret)
+	{
+		audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_MACH_PROBE_FAIL);
+	}
+	else
+	{
+		/* do nothing */
+	}
+#endif
 	devm_kfree(&pdev->dev, pdata);
 	if (pdata->vaddr_gpio_mux_spkr_ctl)
 		iounmap(pdata->vaddr_gpio_mux_spkr_ctl);

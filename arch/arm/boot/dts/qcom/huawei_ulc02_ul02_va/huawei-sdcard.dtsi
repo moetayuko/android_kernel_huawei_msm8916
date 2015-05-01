@@ -1,0 +1,16 @@
+&soc {
+        huawei,huawei-gpio-info {
+                compatible = "huawei-gpio-info";
+                huawei,voltage-active-low;
+        };
+	huawei,huawei-supply-uhsi {
+		compatible = "huawei,huawei-supply-uhsi";
+	};
+};
+
+&sdhc_2 {
+        /*add for changing the order of vdd and vddio*/
+        huawei,power-off-no-card;
+	/*modify it for surport 3.0 sdcard for cherry*/
+	qcom,vdd-io-voltage-level = <1800000 2950000>;
+};

@@ -46,6 +46,8 @@
 #include "msm8916-wcd-irq.h"
 #include "msm8x16_wcd_registers.h"
 
+#include <sound/hw_audio_info.h>
+
 #define MSM8X16_WCD_RATES (SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |\
 			SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000)
 #define MSM8X16_WCD_FORMATS (SNDRV_PCM_FMTBIT_S16_LE |\
@@ -71,7 +73,12 @@
 #define HPHR_PA_DISABLE (0x01 << 2)
 #define EAR_PA_DISABLE (0x01 << 3)
 #define SPKR_PA_DISABLE (0x01 << 4)
+#define DEFAULT_BOOST_VOLTAGE 4500
+#define MIN_BOOST_VOLTAGE 4000
+#define BOOST_VOLTAGE_STEP 50
 
+#define VOLTAGE_CONVERTER(value, min_value, step_size)\
+	((value - min_value)/step_size)
 enum {
 	AIF1_PB = 0,
 	AIF1_CAP,
@@ -3159,6 +3166,8 @@ static void msm8x16_wcd_update_reg_defaults(struct snd_soc_codec *codec)
 				msm8x16_wcd_reg_defaults_2_0[i].reg,
 				msm8x16_wcd_reg_defaults_2_0[i].val);
 	}
+	snd_soc_update_bits(codec, MSM8X16_WCD_A_ANALOG_OUTPUT_VOLTAGE,
+		0x1F, msm8x16_wcd->boost_voltage);
 }
 
 static const struct msm8x16_wcd_reg_mask_val
@@ -3167,7 +3176,7 @@ static const struct msm8x16_wcd_reg_mask_val
 	/* Initialize current threshold to 350MA
 	 * number of wait and run cycles to 4096
 	 */
-	{MSM8X16_WCD_A_ANALOG_RX_COM_OCP_CTL, 0xFF, 0xD1},
+	{MSM8X16_WCD_A_ANALOG_RX_COM_OCP_CTL, 0xFF, 0xDF},
 	{MSM8X16_WCD_A_ANALOG_RX_COM_OCP_COUNT, 0xFF, 0xFF},
 };
 
@@ -3342,12 +3351,14 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 {
 	struct msm8x16_wcd_priv *msm8x16_wcd_priv;
 	struct msm8x16_wcd *msm8x16_wcd;
-	int i;
-
+	int i, boost_voltage, ret;
+	char *boost_voltage_name = "qcom,msm-boost-voltage";
+	audio_dsm_register();
 	dev_dbg(codec->dev, "%s()\n", __func__);
 
 	msm8x16_wcd_priv = kzalloc(sizeof(struct msm8x16_wcd_priv), GFP_KERNEL);
 	if (!msm8x16_wcd_priv) {
+		audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_ALLOC_MEM_FAIL);
 		dev_err(codec->dev, "Failed to allocate private data\n");
 		return -ENOMEM;
 	}
@@ -3368,6 +3379,7 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 	msm8x16_wcd->dig_base = ioremap(MSM8X16_DIGITAL_CODEC_BASE_ADDR,
 				  MSM8X16_DIGITAL_CODEC_REG_SIZE);
 	if (msm8x16_wcd->dig_base == NULL) {
+		audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_IOREMAP_FAIL);
 		dev_err(codec->dev, "%s ioremap failed", __func__);
 		kfree(msm8x16_wcd_priv);
 		return -ENOMEM;
@@ -3376,6 +3388,19 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 					MSM8X16_WCD_A_DIGITAL_REVISION1);
 	dev_dbg(codec->dev, "%s :PMIC REV: %d", __func__,
 					msm8x16_wcd_priv->pmic_rev);
+	ret = of_property_read_u32(codec->dev->of_node, boost_voltage_name,
+			&boost_voltage);
+	if (ret) {
+		dev_dbg(codec->dev, "Looking up %s property in node %s failed",
+			boost_voltage_name, codec->dev->of_node->full_name);
+		msm8x16_wcd_priv->boost_voltage =
+			VOLTAGE_CONVERTER(DEFAULT_BOOST_VOLTAGE,
+					MIN_BOOST_VOLTAGE, BOOST_VOLTAGE_STEP);
+	} else {
+		msm8x16_wcd_priv->boost_voltage =
+			VOLTAGE_CONVERTER(boost_voltage, MIN_BOOST_VOLTAGE,
+					BOOST_VOLTAGE_STEP);
+	}
 	msm8x16_wcd_bringup(codec);
 	msm8x16_wcd_codec_init_reg(codec);
 	msm8x16_wcd_update_reg_defaults(codec);
@@ -3402,6 +3427,7 @@ static int msm8x16_wcd_codec_probe(struct snd_soc_codec *codec)
 	    subsys_notif_register_notifier("modem",
 					   &modem_state_notifier_block);
 	if (!modem_state_notifier) {
+		audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_MEDOM_REGIST_FAIL);
 		dev_err(codec->dev, "Failed to register modem state notifier\n"
 			);
 		iounmap(msm8x16_wcd->dig_base);
@@ -3679,11 +3705,19 @@ static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 	struct resource *wcd_resource;
 	int modem_state;
 
+	struct timespec ts = {0, 0};
+	audio_dsm_register();
+	
 	dev_dbg(&spmi->dev, "%s(%d):slave ID = 0x%x\n",
 		__func__, __LINE__,  spmi->sid);
 
 	modem_state = apr_get_modem_state();
 	if (modem_state != APR_SUBSYS_LOADED) {
+		get_monotonic_boottime(&ts);
+		if(ts.tv_sec >= DSM_REPORT_DELAY_TIME) 
+		{
+			audio_dsm_report_num(DSM_AUDIO_ADSP_SETUP_FAIL_ERROR_NO, DSM_AUDIO_MESG_MEDOM_LOAD_FAIL);
+		}
 		dev_dbg(&spmi->dev, "Modem is not loaded yet %d\n",
 				modem_state);
 		return -EPROBE_DEFER;
@@ -3691,6 +3725,7 @@ static int msm8x16_wcd_spmi_probe(struct spmi_device *spmi)
 
 	wcd_resource = spmi_get_resource(spmi, NULL, IORESOURCE_MEM, 0);
 	if (!wcd_resource) {
+		audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_SPMI_GET_FAIL);
 		dev_err(&spmi->dev, "Unable to get Tombak base address\n");
 		return -ENXIO;
 	}
@@ -3791,6 +3826,22 @@ err_supplies:
 err_codec:
 	kfree(msm8x16);
 rtn:
+	if(-EPROBE_DEFER == ret)
+	{
+		get_monotonic_boottime(&ts);
+		if(ts.tv_sec >= DSM_REPORT_DELAY_TIME) 
+		{
+			audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_SPMI_PROBE_FAIL);
+		}
+	}
+	else if(0 != ret)
+	{
+		audio_dsm_report_num(DSM_AUDIO_CARD_LOAD_FAIL_ERROR_NO, DSM_AUDIO_MESG_SPMI_PROBE_FAIL);
+	}
+	else
+	{
+		/* do nothing */
+	}
 	return ret;
 }
 

@@ -20,6 +20,15 @@
 #include "msm_isp_stats_util.h"
 #include "msm_camera_io_util.h"
 
+#ifdef CONFIG_HUAWEI_KERNEL
+enum run_mode_enum{
+	RUN_MODE_INIT = 0,
+	RUN_MODE_FACTORY,
+	RUN_MODE_NORMAL,
+};
+extern char *saved_command_line;
+#endif
+
 #define MAX_ISP_V4l2_EVENTS 100
 static DEFINE_MUTEX(bandwidth_mgr_mutex);
 static struct msm_isp_bandwidth_mgr isp_bandwidth_mgr;
@@ -452,7 +461,11 @@ static long msm_isp_ioctl_unlocked(struct v4l2_subdev *sd,
 	 * longer time to complete such as start/stop ISP streams
 	 * which blocks until the hardware start/stop streaming
 	 */
+#ifdef CONFIG_HUAWEI_KERNEL
+	pr_debug("%s cmd: %d\n", __func__, _IOC_TYPE(cmd));
+#else
 	ISP_DBG("%s cmd: %d\n", __func__, _IOC_TYPE(cmd));
+#endif
 	switch (cmd) {
 	case VIDIOC_MSM_VFE_REG_CFG: {
 		mutex_lock(&vfe_dev->realtime_mutex);
@@ -1378,36 +1391,64 @@ void msm_isp_do_tasklet(unsigned long data)
 	struct msm_vfe_irq_ops *irq_ops = &vfe_dev->hw_info->vfe_ops.irq_ops;
 	struct msm_vfe_tasklet_queue_cmd *queue_cmd;
 	struct msm_vfe_tasklet_queue_cmd *reg_update_q_cmd;
-	struct msm_isp_timestamp ts;
+	struct msm_isp_timestamp ts, reg_update_ts;
 	uint32_t irq_status0, irq_status1;
+	uint32_t reg_update0 = 0, reg_update1 = 0;
+	uint8_t cancel_reg_update = 1, cancel_irq_handling = 1;
 	while (atomic_read(&vfe_dev->irq_cnt) ||
 		(atomic_read(&vfe_dev->reg_update_cnt))) {
+		spin_lock_irqsave(&vfe_dev->tasklet_lock, flags);
 		if (atomic_read(&vfe_dev->irq_cnt)) {
-			spin_lock_irqsave(&vfe_dev->tasklet_lock, flags);
 			queue_cmd = list_first_entry(&vfe_dev->tasklet_q,
 			struct msm_vfe_tasklet_queue_cmd, list);
-			if (!queue_cmd) {
+			if (!queue_cmd)
 				atomic_set(&vfe_dev->irq_cnt, 0);
+			else {
+				atomic_sub(1, &vfe_dev->irq_cnt);
+				list_del(&queue_cmd->list);
+				queue_cmd->cmd_used = 0;
+				irq_status0 = queue_cmd->vfeInterruptStatus0;
+				irq_status1 = queue_cmd->vfeInterruptStatus1;
+				ts = queue_cmd->ts;
+				cancel_irq_handling = 0;
+			}
+		}
+		if (atomic_read(&vfe_dev->reg_update_cnt)) {
+			reg_update_q_cmd = list_first_entry(
+				&vfe_dev->tasklet_regupdate_q,
+				struct msm_vfe_tasklet_queue_cmd, list);
+			if (!reg_update_q_cmd) {
+				atomic_set(&vfe_dev->reg_update_cnt, 0);
 				spin_unlock_irqrestore(&vfe_dev->tasklet_lock,
 					flags);
-				continue;
+			} else {
+				atomic_sub(1, &vfe_dev->reg_update_cnt);
+				list_del(&reg_update_q_cmd->list);
+				reg_update_q_cmd->cmd_used = 0;
+				reg_update0 =
+					reg_update_q_cmd->vfeInterruptStatus0;
+				reg_update1 =
+					reg_update_q_cmd->vfeInterruptStatus1;
+				reg_update_ts = reg_update_q_cmd->ts;
+				cancel_reg_update = 0;
+				spin_unlock_irqrestore(
+					&vfe_dev->tasklet_lock, flags);
 			}
-			atomic_sub(1, &vfe_dev->irq_cnt);
-			list_del(&queue_cmd->list);
-			queue_cmd->cmd_used = 0;
-			irq_status0 = queue_cmd->vfeInterruptStatus0;
-			irq_status1 = queue_cmd->vfeInterruptStatus1;
-			ts = queue_cmd->ts;
+		} else {
 			spin_unlock_irqrestore(&vfe_dev->tasklet_lock, flags);
-			if (atomic_read(&vfe_dev->error_info.overflow_state) !=
-				NO_OVERFLOW) {
-				pr_err_ratelimited("There is Overflow, kicking up recovery !!!!");
-				msm_isp_process_overflow_recovery(vfe_dev,
-					irq_status0, irq_status1);
-				continue;
-			}
-			ISP_DBG("%s: status0: 0x%x status1: 0x%x\n",
-				__func__, irq_status0, irq_status1);
+		}
+		if (atomic_read(&vfe_dev->error_info.overflow_state) !=
+			NO_OVERFLOW) {
+			pr_err_ratelimited("There is Overflow, kicking up recovery !!!!");
+			msm_isp_process_overflow_recovery(vfe_dev,
+				irq_status0, irq_status1);
+			cancel_reg_update = 1;
+			cancel_irq_handling = 1;
+			continue;
+		}
+		ISP_DBG("%s: status0: 0x%x status1: 0x%x\n",
+			__func__, irq_status0, irq_status1);
+		if (!cancel_irq_handling) {
 			irq_ops->process_reset_irq(vfe_dev,
 				irq_status0, irq_status1);
 			irq_ops->process_halt_irq(vfe_dev,
@@ -1419,33 +1460,13 @@ void msm_isp_do_tasklet(unsigned long data)
 			irq_ops->process_stats_irq(vfe_dev,
 				irq_status0, irq_status1, &ts);
 			msm_isp_process_error_info(vfe_dev);
-		}
-		if (atomic_read(&vfe_dev->reg_update_cnt)) {
-			spin_lock_irqsave(&vfe_dev->tasklet_lock, flags);
-			reg_update_q_cmd = list_first_entry(
-				&vfe_dev->tasklet_regupdate_q,
-				struct msm_vfe_tasklet_queue_cmd, list);
-			if (!reg_update_q_cmd) {
-				atomic_set(&vfe_dev->reg_update_cnt, 0);
-				spin_unlock_irqrestore(&vfe_dev->tasklet_lock,
-					flags);
-				continue;
-			}
-			atomic_sub(1, &vfe_dev->reg_update_cnt);
-			list_del(&reg_update_q_cmd->list);
-			reg_update_q_cmd->cmd_used = 0;
-			irq_status0 = reg_update_q_cmd->vfeInterruptStatus0;
-			irq_status1 = reg_update_q_cmd->vfeInterruptStatus1;
-			ts = reg_update_q_cmd->ts;
-			spin_unlock_irqrestore(&vfe_dev->tasklet_lock, flags);
-			if (atomic_read(&vfe_dev->error_info.overflow_state) !=
-				NO_OVERFLOW) {
-				continue;
-			}
-			irq_ops->process_reg_update(vfe_dev,
-				irq_status0, irq_status1, &ts);
+			cancel_irq_handling = 1;
 		}
 	}
+	if (!cancel_reg_update)
+		irq_ops->process_reg_update(vfe_dev,
+			reg_update0, reg_update1, &reg_update_ts);
+		cancel_reg_update = 1;
 }
 
 int msm_isp_set_src_state(struct vfe_device *vfe_dev, void *arg)
@@ -1566,3 +1587,32 @@ int msm_isp_close_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	mutex_unlock(&vfe_dev->realtime_mutex);
 	return 0;
 }
+
+#ifdef CONFIG_HUAWEI_KERNEL
+bool huawei_cam_is_factory_mode(void)
+{
+	static enum run_mode_enum run_mode = RUN_MODE_INIT;
+
+	if(RUN_MODE_INIT == run_mode)
+	{
+		run_mode = RUN_MODE_NORMAL;
+		if(saved_command_line != NULL)
+		{
+			if(strstr(saved_command_line, "androidboot.huawei_swtype=factory") != NULL)
+			{
+				run_mode = RUN_MODE_FACTORY;
+			}
+		}
+		pr_warn("%s run mode is %d\n", __func__, run_mode);
+	}
+
+	if(RUN_MODE_FACTORY == run_mode)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+#endif

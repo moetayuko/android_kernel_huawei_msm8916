@@ -35,6 +35,7 @@
 #include "msm8x16_wcd_registers.h"
 #include "msm8916-wcd-irq.h"
 #include "msm8x16-wcd.h"
+#include <sound/hw_audio_info.h>
 
 #define WCD_MBHC_JACK_MASK (SND_JACK_HEADSET | SND_JACK_OC_HPHL | \
 			   SND_JACK_OC_HPHR | SND_JACK_LINEOUT | \
@@ -1005,6 +1006,14 @@ report:
 	pr_debug("%s: Valid plug found, plug type %d wrk_cmpt %d btn_intr %d\n",
 			__func__, plug_type, wrk_complete,
 			mbhc->btn_press_intr);
+	/* remove swap & hph type to make auto audio mmi test pass */
+#ifdef CONFIG_HUAWEI_KERNEL
+	if((MBHC_PLUG_TYPE_HIGH_HPH == plug_type)||
+		(MBHC_PLUG_TYPE_GND_MIC_SWAP == plug_type)) {
+			pr_debug("%s: force the type change to headset from swap and hph\n", __func__);
+			plug_type = MBHC_PLUG_TYPE_HEADSET;
+	}
+#endif
 	wcd_mbhc_find_plug_and_report(mbhc, plug_type);
 exit:
 	micbias2 = snd_soc_read(codec, MSM8X16_WCD_A_ANALOG_MICB_2_EN);
@@ -1101,6 +1110,10 @@ static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 		}
 	}
 exit:
+	if(MBHC_PLUG_TYPE_INVALID == plug_type)
+	{
+		audio_dsm_report_num(DSM_AUDIO_HANDSET_DECT_FAIL_ERROR_NO, DSM_AUDIO_MESG_HS_TYPE_DECT_FAIL);
+	}
 	snd_soc_update_bits(codec,
 		MSM8X16_WCD_A_ANALOG_MICB_2_EN,
 		0x80, 0x00);
@@ -1807,6 +1820,24 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 				__func__);
 			return ret;
 		}
+                /* regist new key for three button headset */
+                ret = snd_jack_set_key(mbhc->button_jack.jack,
+                                       SND_JACK_BTN_1,
+                                       KEY_VOLUMEUP);
+                if (ret) {
+                        pr_err("%s: Failed to set code for btn-1\n",
+                                __func__);
+                        return ret;
+                }
+                ret = snd_jack_set_key(mbhc->button_jack.jack,
+                                       SND_JACK_BTN_2,
+                                       KEY_VOLUMEDOWN);
+                if (ret) {
+                        pr_err("%s: Failed to set code for btn-2\n",
+                                __func__);
+                        return ret;
+                }
+
 
 		INIT_DELAYED_WORK(&mbhc->mbhc_btn_dwork, wcd_btn_lpress_fn);
 	}

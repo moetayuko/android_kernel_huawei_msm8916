@@ -9,7 +9,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 #define pr_fmt(fmt) "#%d: " fmt, __LINE__
 
 #include <linux/delay.h>
@@ -36,6 +35,8 @@
 #define PMIC_ARB_GENI_CTRL		0x0024
 #define PMIC_ARB_GENI_STATUS		0x0028
 #define PMIC_ARB_PROTOCOL_IRQ_STATUS	(0x700 + 0x820)
+#define PMIC_ARB_CFG_REG		(0xF04)
+#define PMIC_ARB_HW_VERSION		(0xF0C)
 
 /* Offset per chnnel-register type */
 #define PMIC_ARB_CMD		(0x00)
@@ -396,9 +397,19 @@ static void pmic_arb_dbg_dump_regs(struct spmi_pmic_arb_dev *pmic_arb, int ret,
 	u32 irq = readl_relaxed(pmic_arb->cnfg + PMIC_ARB_PROTOCOL_IRQ_STATUS);
 	u32 geni_stat = readl_relaxed(pmic_arb->cnfg + PMIC_ARB_GENI_STATUS);
 	u32 geni_ctrl = readl_relaxed(pmic_arb->cnfg + PMIC_ARB_GENI_CTRL);
+#ifdef CONFIG_HUAWEI_KERNEL
+	u32 spmi_cfg = readl_relaxed(pmic_arb->cnfg + PMIC_ARB_CFG_REG);
+	u32 spmi_hw_ver = readl_relaxed(pmic_arb->cnfg + PMIC_ARB_HW_VERSION);
+#endif
+#ifndef CONFIG_HUAWEI_KERNEL
 	dev_err(pmic_arb->dev,
 	"err:%d on %s PROTOCOL_IRQ_STATUS:0x%x GENI_STATUS:0x%x GENI_CTRL:0x%x\n",
 		ret, msg, irq, geni_stat, geni_ctrl);
+#else
+	dev_err(pmic_arb->dev,
+	"err:%d on %s PROTOCOL_IRQ_STATUS:0x%x GENI_STATUS:0x%x GENI_CTRL:0x%x\n SPMI_CFG_REG:0x%x\n SPMI_HW_VER:0x%x\n",
+		ret, msg, irq, geni_stat, geni_ctrl, spmi_cfg, spmi_hw_ver);
+#endif
 }
 
 static int

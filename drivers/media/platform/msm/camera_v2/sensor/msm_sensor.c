@@ -19,6 +19,11 @@
 #include <mach/rpm-regulator.h>
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
+#include <linux/pm_qos.h>
+
+#include "sensor_otp_common_if.h"
+
+#include "msm_camera_dsm.h"
 
 /*#define CONFIG_MSMB_CAMERA_DEBUG*/
 #undef CDBG
@@ -27,6 +32,13 @@
 #else
 #define CDBG(fmt, args...) do { } while (0)
 #endif
+
+#define MSM_SENSOR_BUFFER_SIZE 1024
+
+static char camera_dsm_log_buff[MSM_SENSOR_BUFFER_SIZE] = {0};
+
+void camera_report_dsm_err_msm_sensor(struct msm_sensor_ctrl_t *s_ctrl, int type, int err_num , const char* str);
+static struct pm_qos_request msm_sensor_qos_request;
 
 static void msm_sensor_adjust_mclk(struct msm_camera_power_ctrl_t *ctrl)
 {
@@ -415,6 +427,31 @@ static struct msm_cam_clk_info cam_8974_clk_info[] = {
 	[SENSOR_CAM_CLK] = {"cam_clk", 0},
 };
 
+static int msm_sensor_check_mcam_id(struct msm_sensor_ctrl_t *s_ctrl)
+{
+	int rc=0,mcam_id=-1;
+	const char *sensor_name;
+	unsigned gpio;
+	if(!s_ctrl->sensordata->power_info.gpio_conf->gpio_num_info->valid[SENSOR_GPIO_CAM_ID])
+		return 0;
+	gpio=s_ctrl->sensordata->power_info.gpio_conf->gpio_num_info->gpio_num[SENSOR_GPIO_CAM_ID];
+	sensor_name = s_ctrl->sensordata->sensor_name;
+	if(s_ctrl->sensordata->slave_info->mcam_id==1 || s_ctrl->sensordata->slave_info->mcam_id==0){
+		mcam_id=gpio_get_value(gpio);
+		if(mcam_id==s_ctrl->sensordata->slave_info->mcam_id){
+			CDBG("%s:%s gpio %d except value:%d match",__func__,sensor_name,gpio,mcam_id);
+			rc=0;
+		}else{
+			pr_err("%s:%s gpio %d value:%d not match",__func__,sensor_name,gpio,mcam_id);
+			rc=-1;
+		}
+	}else{
+		CDBG("%s:%s gpio %d value:%d no need to match CAMID",__func__,sensor_name,gpio,mcam_id);
+		return 0;
+	}
+	return rc;
+}
+
 int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	struct msm_camera_power_ctrl_t *power_info;
@@ -436,6 +473,7 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 			__func__, __LINE__, power_info, sensor_i2c_client);
 		return -EINVAL;
 	}
+	pm_qos_remove_request(&msm_sensor_qos_request);
 	return msm_camera_power_down(power_info, sensor_device_type,
 		sensor_i2c_client);
 }
@@ -476,16 +514,26 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			sensor_i2c_client);
 		if (rc < 0)
 			return rc;
+		rc = msm_sensor_check_mcam_id(s_ctrl);
+		if(rc < 0)
+		{
+			//mcam id not match
+			msm_camera_power_down(power_info,
+				s_ctrl->sensor_device_type, sensor_i2c_client);
+			break;
+		}
 		rc = msm_sensor_check_id(s_ctrl);
 		if (rc < 0) {
 			msm_camera_power_down(power_info,
 				s_ctrl->sensor_device_type, sensor_i2c_client);
-			msleep(20);
+			//from msleep(20) to mdelay(2)
+			mdelay(2);
 			continue;
 		} else {
 			break;
 		}
 	}
+	pm_qos_add_request(&msm_sensor_qos_request, PM_QOS_CPU_DMA_LATENCY, 1);
 
 	return rc;
 }
@@ -518,6 +566,7 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		sensor_i2c_client, slave_info->sensor_id_reg_addr,
 		&chipid, MSM_CAMERA_I2C_WORD_DATA);
 	if (rc < 0) {
+		/* delete some lines */
 		pr_err("%s: %s: read id failed\n", __func__, sensor_name);
 		return rc;
 	}
@@ -525,6 +574,7 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	CDBG("%s: read id: 0x%x expected id 0x%x:\n", __func__, chipid,
 		slave_info->sensor_id);
 	if (chipid != slave_info->sensor_id) {
+		/* delete some lines */
 		pr_err("msm_sensor_match_id chip id doesnot match\n");
 		return -ENODEV;
 	}
@@ -559,6 +609,16 @@ static int msm_sensor_get_af_status(struct msm_sensor_ctrl_t *s_ctrl,
 	return 0;
 }
 
+static int msm_sensor_get_afc_otp_info(struct msm_sensor_ctrl_t *s_ctrl,
+			void __user *argp)
+{
+	struct msm_sensor_afc_otp_info *odata = (struct msm_sensor_afc_otp_info *)argp;
+	odata->starting_dac = s_ctrl->afc_otp_info.starting_dac;
+	odata->infinity_dac = s_ctrl->afc_otp_info.infinity_dac;
+	odata->macro_dac = s_ctrl->afc_otp_info.macro_dac;
+	return 0;
+}
+
 static long msm_sensor_subdev_ioctl(struct v4l2_subdev *sd,
 			unsigned int cmd, void *arg)
 {
@@ -576,6 +636,8 @@ static long msm_sensor_subdev_ioctl(struct v4l2_subdev *sd,
 	case VIDIOC_MSM_SENSOR_RELEASE:
 		msm_sensor_stop_stream(s_ctrl);
 		return 0;
+	case VIDIOC_MSM_SENSOR_GET_AFC_OTP_INFO:
+	    return msm_sensor_get_afc_otp_info(s_ctrl, argp);
 	case MSM_SD_SHUTDOWN:
 		return 0;
 	default:
@@ -588,6 +650,9 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 	struct sensorb_cfg_data *cdata = (struct sensorb_cfg_data *)argp;
 	int32_t rc = 0;
 	int32_t i = 0;
+
+	int32_t index = -1;
+
 	mutex_lock(s_ctrl->msm_sensor_mutex);
 	CDBG("%s:%d %s cfgtype = %d\n", __func__, __LINE__,
 		s_ctrl->sensordata->sensor_name, cdata->cfgtype);
@@ -769,8 +834,8 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		}
 
 		if (!conf_array.size) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			rc = -EFAULT;
+			pr_err("%s:%d conf_array.size = 0\n", __func__, __LINE__);
+			//rc = -EFAULT;
 			break;
 		}
 
@@ -793,9 +858,83 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		conf_array.reg_setting = reg_setting;
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write_table(
 			s_ctrl->sensor_i2c_client, &conf_array);
+		//i2c write err
+		if ( rc < 0 )
+		{
+			camera_report_dsm_err_msm_sensor(s_ctrl, DSM_CAMERA_I2C_ERR, rc, "CFG_WRITE_I2C_ARRAY" );
+		}
 		kfree(reg_setting);
 		break;
 	}
+
+        case CFG_WRITE_EXPOSURE_DATA: {
+            struct msm_camera_i2c_reg_setting conf_array;
+            struct msm_camera_i2c_reg_array *reg_setting = NULL;
+
+            if (s_ctrl->sensor_state != MSM_SENSOR_POWER_UP) {
+                 pr_err("%s:%d failed: invalid state %d\n", __func__,
+                     __LINE__, s_ctrl->sensor_state);
+                 rc = -EFAULT;
+                 break;
+            }
+
+            if (copy_from_user(&conf_array,
+                 (void *)cdata->cfg.setting,
+                 sizeof(struct msm_camera_i2c_reg_setting))) {
+                 pr_err("%s:%d failed\n", __func__, __LINE__);
+                 rc = -EFAULT;
+                 break;
+            }
+
+            if (!conf_array.size) {
+                 pr_err("%s:%d failed\n", __func__, __LINE__);
+                 break;
+            }
+
+            reg_setting = kzalloc(conf_array.size *
+                 (sizeof(struct msm_camera_i2c_reg_array)), GFP_KERNEL);
+            if (!reg_setting) {
+                 pr_err("%s:%d failed\n", __func__, __LINE__);
+                 rc = -ENOMEM;
+                 break;
+            }
+            if (copy_from_user(reg_setting, (void *)conf_array.reg_setting,
+                 conf_array.size *
+                 sizeof(struct msm_camera_i2c_reg_array))) {
+                 pr_err("%s:%d failed\n", __func__, __LINE__);
+                 kfree(reg_setting);
+                 rc = -EFAULT;
+                 break;
+            }
+
+            conf_array.reg_setting = reg_setting;
+            for (i = 0; i < conf_array.size; i++) {
+                if(conf_array.reg_setting[i].data_type){
+                   rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+                       s_ctrl->sensor_i2c_client, conf_array.reg_setting[i].reg_addr, conf_array.reg_setting[i].reg_data,
+                       conf_array.reg_setting[i].data_type);
+                }
+                else{
+                     rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
+                         s_ctrl->sensor_i2c_client, conf_array.reg_setting[i].reg_addr, conf_array.reg_setting[i].reg_data,
+                         conf_array.data_type);
+                }
+            }
+		//i2c write err
+		if ( rc < 0 )
+		{
+			camera_report_dsm_err_msm_sensor(s_ctrl, DSM_CAMERA_I2C_ERR, rc, "CFG_WRITE_EXPOSURE_DATA");
+		}
+            if (conf_array.delay > 20)
+                msleep(conf_array.delay);
+            else if (conf_array.delay)
+                usleep_range(conf_array.delay * 1000, (conf_array.delay
+                  * 1000) + 1000);
+
+            kfree(reg_setting);
+            break;
+        }
+
 	case CFG_SLAVE_READ_I2C: {
 		struct msm_camera_i2c_read_config read_config;
 		uint16_t local_data = 0;
@@ -836,6 +975,8 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 				&local_data, read_config.data_type);
 		if (rc < 0) {
 			pr_err("%s:%d: i2c_read failed\n", __func__, __LINE__);
+			//read err
+			camera_report_dsm_err_msm_sensor(s_ctrl, DSM_CAMERA_I2C_ERR, rc, "CFG_SLAVE_READ_I2C");
 			break;
 		}
 		if (copy_to_user((void __user *)read_config.data,
@@ -920,6 +1061,13 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			rc = -EFAULT;
 			break;
 		}
+
+		//i2c write err
+		if ( rc < 0 )
+		{
+			camera_report_dsm_err_msm_sensor(s_ctrl, DSM_CAMERA_I2C_ERR, rc, "CFG_SLAVE_WRITE_I2C_ARRAY");
+		}
+
 		kfree(reg_setting);
 		break;
 	}
@@ -968,6 +1116,13 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_seq_table(s_ctrl->sensor_i2c_client,
 			&conf_array);
+
+		//i2c write err
+		if ( rc < 0 )
+		{
+			camera_report_dsm_err_msm_sensor(s_ctrl, DSM_CAMERA_I2C_ERR, rc, "CFG_WRITE_I2C_SEQ_ARRAY");
+		}
+
 		kfree(reg_setting);
 		break;
 	}
@@ -1063,6 +1218,37 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		}
 		break;
 	}
+
+	case CFG_SET_OTP_INFO:
+
+		CDBG("%s,%d: CFG_SET_OTP_INFO\n", __func__, __LINE__);
+		//if power up
+		if (s_ctrl->sensor_state != MSM_SENSOR_POWER_UP)
+		{
+			pr_err("%s:%d failed: invalid state %d\n", __func__,
+				__LINE__, s_ctrl->sensor_state);
+			rc = -EFAULT;
+			break;
+		}
+		//set otp info
+		if ( is_exist_otp_function(s_ctrl, &index) )
+		{
+			rc = otp_function_lists[index].sensor_otp_function(s_ctrl, index);
+			if (rc < 0)
+			{
+				camera_report_dsm_err_msm_sensor(s_ctrl, DSM_CAMERA_OTP_ERR, rc, NULL);
+				pr_err("%s:%d failed rc %d\n", __func__,
+					__LINE__, rc);
+				break;
+			}
+		}
+		else
+		{
+			pr_err("%s, %d: %s unsupport otp operation\n", __func__,
+					__LINE__, s_ctrl->sensordata->sensor_name);
+		}
+		break;
+
 	default:
 		rc = -EFAULT;
 		break;
@@ -1109,6 +1295,55 @@ static int msm_sensor_v4l2_enum_fmt(struct v4l2_subdev *sd,
 
 	*code = s_ctrl->sensor_v4l2_subdev_info[index].code;
 	return 0;
+}
+
+void camera_report_dsm_err_msm_sensor(struct msm_sensor_ctrl_t *s_ctrl, int type, int err_num , const char* str)
+{
+#ifdef CONFIG_HUAWEI_DSM
+	ssize_t len = 0;
+
+	memset(camera_dsm_log_buff, 0, MSM_SENSOR_BUFFER_SIZE);
+
+	if ( (NULL != s_ctrl) && (NULL != s_ctrl->sensordata) )
+	{
+		//get module info
+		len = snprintf(camera_dsm_log_buff,
+				MSM_SENSOR_BUFFER_SIZE,
+				"Sensor name:%s, eeprom name:%s ",
+				s_ctrl->sensordata->sensor_name,
+				s_ctrl->sensordata->eeprom_name);
+	}
+
+	if ( len >= MSM_SENSOR_BUFFER_SIZE -1 )
+	{
+		CDBG("write camera_dsm_log_buff overflow.\n");
+		return;
+	}
+
+	/* camera record error info according to err type */
+	switch(type)
+	{
+		case DSM_CAMERA_I2C_ERR:
+			/* report i2c infomation */
+			len += snprintf(camera_dsm_log_buff+len, MSM_SENSOR_BUFFER_SIZE-len, "[msm_sensor]I2C Error : %s\n.", str);
+			break;
+
+		case DSM_CAMERA_OTP_ERR:
+			/* report otp infomation */
+			len += snprintf(camera_dsm_log_buff+len, MSM_SENSOR_BUFFER_SIZE-len, "[msm_sensor]OTP error.No effective OTP info.\n");
+			break;
+
+		case DSM_CAMERA_CHIP_ID_NOT_MATCH:
+			/* report otp infomation */
+			len += snprintf(camera_dsm_log_buff+len, MSM_SENSOR_BUFFER_SIZE-len, "[msm_sensor]Chip ID DON'T MATCH.\n");
+			break;
+
+		default:
+			break;
+	}
+
+	camera_report_dsm_err( type, err_num, camera_dsm_log_buff);
+#endif
 }
 
 static struct v4l2_subdev_core_ops msm_sensor_subdev_core_ops = {

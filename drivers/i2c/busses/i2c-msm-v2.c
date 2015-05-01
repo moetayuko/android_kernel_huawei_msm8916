@@ -75,6 +75,7 @@ static int  i2c_msm_fifo_create_struct(struct i2c_msm_ctrl *ctrl);
 static int  i2c_msm_bam_create_struct(struct i2c_msm_ctrl *ctrl);
 static int  i2c_msm_blk_create_struct(struct i2c_msm_ctrl *ctrl);
 static void i2c_msm_clk_path_init(struct i2c_msm_ctrl *ctrl);
+static void i2c_msm_recover_bus_busy(struct i2c_msm_ctrl *ctrl);
 
 /* i2c_msm_bam_get_struct: return the bam structure
  * if not created, call i2c_msm_bam_create_struct to create it
@@ -576,6 +577,41 @@ i2c_msm_dbg_bam_tag_to_str(const struct i2c_msm_bam_tag *bam_tag, char *buf,
 
 	ret = i2c_msm_dbg_tag_to_str(&tag, buf, buf_len);
 	return ret;
+}
+
+/*************************************************************
+Description: this fucntion use to set i2c clock frequency
+function name: qup_set_clk_freq
+input:struct i2c_adapter *adap
+		clk_freq
+output:none
+return:none
+****************************************************************/
+void qup_set_clk_freq(struct i2c_adapter *adap, int clk_freq)
+{
+        struct i2c_msm_ctrl *ctrl = i2c_get_adapdata(adap);
+        if(ctrl)
+        {
+            ctrl->rsrcs.clk_freq_out = clk_freq;
+        }
+        return;
+}
+
+/*************************************************************
+Description: this fucntion use to get i2c clock frequency
+function name: qup_set_clk_freq
+input:struct i2c_adapter *adap
+output:none
+return:none
+****************************************************************/
+int qup_get_clk_freq(struct i2c_adapter *adap)
+{
+        struct i2c_msm_ctrl *ctrl = i2c_get_adapdata(adap);
+        if(ctrl)
+        {
+            return ctrl->rsrcs.clk_freq_out;
+        }
+        return 0;
 }
 
 /*
@@ -1103,7 +1139,7 @@ struct i2c_msm_clk_div_fld {
  * divider values as per HW Designers
  */
 static struct i2c_msm_clk_div_fld i2c_msm_clk_div_map[] = {
-	{KHz(100), 124, 62},
+	{KHz(100),  93, 93},
 	{KHz(400),  28, 14},
 	{KHz(1000),  8,  5},
 };
@@ -3038,10 +3074,15 @@ static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 	/* poll until bus is released */
 	if (i2c_msm_qup_poll_bus_active_unset(ctrl)) {
 		if ((ctrl->xfer.err & BIT(I2C_MSM_ERR_ARB_LOST)) ||
-		    (ctrl->xfer.err & BIT(I2C_MSM_ERR_BUS_ERR)) ||
+		    (ctrl->xfer.err & BIT(I2C_MSM_ERR_BUS_ERR) ||
+		    !(ctrl->xfer.err & I2C_STATUS_BUS_MASTER)) ||
 		    (ctrl->xfer.err & BIT(I2C_MSM_ERR_TIMEOUT))) {
 			if (i2c_msm_qup_slv_holds_bus(ctrl))
+			{
+				dev_err(ctrl->dev,"i2c bus is holded by slv\n");
 				qup_i2c_recover_bus_busy(ctrl);
+				i2c_msm_recover_bus_busy(ctrl);
+			}
 
 			/* do not generalize error to EIO if its already set */
 			if (!err)
@@ -3689,22 +3730,27 @@ static int i2c_msm_rsrcs_gpio_pinctrl_init(struct i2c_msm_ctrl *ctrl)
 
 	ctrl->rsrcs.gpio_state_suspend =
 		i2c_msm_rsrcs_gpio_get_state(ctrl, I2C_MSM_PINCTRL_SUSPEND);
+	ctrl->rsrcs.gpio_state_defult =
+		i2c_msm_rsrcs_gpio_get_state(ctrl, I2C_MSM_PINCTRL_DEFULT);
 
 	return 0;
 }
 
 static void i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
-				bool runtime_active)
+				enum i2c_msm_pinctl_state pinctl_state)
 {
 	struct pinctrl_state *pins_state;
 	const char           *pins_state_name;
 
-	if (runtime_active) {
+	if (pinctl_state == I2C_MSM_DFS_ACTIVE) {
 		pins_state      = ctrl->rsrcs.gpio_state_active;
 		pins_state_name = I2C_MSM_PINCTRL_ACTIVE;
-	} else {
+	} else if (pinctl_state == I2C_MSM_DFS_SUSPEND) {
 		pins_state      = ctrl->rsrcs.gpio_state_suspend;
 		pins_state_name = I2C_MSM_PINCTRL_SUSPEND;
+	} else if (pinctl_state == I2C_MSM_DFS_DEFULT) {
+		pins_state      = ctrl->rsrcs.gpio_state_defult;
+		pins_state_name = I2C_MSM_PINCTRL_DEFULT;
 	}
 
 	if (!IS_ERR_OR_NULL(pins_state)) {
@@ -3718,6 +3764,35 @@ static void i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
 			"error pinctrl state-name:'%s' is not configured\n",
 			pins_state_name);
 	}
+}
+
+static void i2c_msm_recover_bus_busy(struct i2c_msm_ctrl *ctrl)
+{
+		void __iomem        *base = ctrl->rsrcs.base;
+		uint32_t status = readl_relaxed(base + QUP_I2C_STATUS);
+		int i = 0;
+		dev_info(ctrl->dev, " start of i2c_msm_recover_bus_busy\n");
+		if ((status & (I2C_STATUS_BUS_ACTIVE)) && (status & (I2C_STATUS_BUS_MASTER)))	
+		{
+			dev_err(ctrl->dev, "i2c bus has been recoveryed now\n");
+			return;
+		}
+
+		disable_irq(ctrl->rsrcs.irq);
+		for(i = 0;i < I2C_MSM_RECOVERY_BUS_TIMES;i++){
+			i2c_msm_pm_pinctrl_state(ctrl,I2C_MSM_DFS_DEFULT);
+			status = readl_relaxed(base + QUP_I2C_STATUS);
+			if ((status & (I2C_STATUS_BUS_ACTIVE)) && (status & (I2C_STATUS_BUS_MASTER))) {
+				dev_err(ctrl->dev, "Bus busy cleared after %d clock cycles, "
+				"status %x\n",
+				i, status);
+				goto recovery_end;
+			}
+		}
+
+recovery_end:
+	enable_irq(ctrl->rsrcs.irq);
+	dev_info(ctrl->dev, " end of i2c_msm_recover_bus_busy\n");
 }
 
 /*
@@ -3932,7 +4007,7 @@ static void i2c_msm_pm_suspend(struct device *dev)
 		return;
 	}
 	i2c_msm_dbg(ctrl, MSM_DBG, "suspending...");
-	i2c_msm_pm_pinctrl_state(ctrl, false);
+	i2c_msm_pm_pinctrl_state(ctrl, I2C_MSM_DFS_SUSPEND);
 	i2c_msm_clk_path_unvote(ctrl);
 	ctrl->pwr_state = MSM_I2C_PM_SUSPENDED;
 	return;
@@ -3948,7 +4023,7 @@ static int i2c_msm_pm_resume(struct device *dev)
 	i2c_msm_dbg(ctrl, MSM_DBG, "resuming...");
 
 	i2c_msm_clk_path_vote(ctrl);
-	i2c_msm_pm_pinctrl_state(ctrl, true);
+	i2c_msm_pm_pinctrl_state(ctrl, I2C_MSM_DFS_ACTIVE);
 	ctrl->pwr_state = MSM_I2C_PM_ACTIVE;
 	return 0;
 }

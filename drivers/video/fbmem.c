@@ -36,9 +36,28 @@
 #include <asm/fb.h>
 
 
+extern int get_offline_cpu(void);
+extern unsigned int cpufreq_get(unsigned int cpu);
     /*
      *  Frame buffer device initialization and setup routines
      */
+#ifdef CONFIG_HUAWEI_LCD
+extern int lcd_debug_mask ;
+
+#define LCD_INFO 2
+
+#ifndef LCD_LOG_INFO
+#define LCD_LOG_INFO( x...)					\
+do{											\
+	if( lcd_debug_mask >= LCD_INFO )		\
+	{										\
+		printk(KERN_ERR "[LCD_INFO] " x);	\
+	}										\
+											\
+}while(0)
+#endif
+#endif
+
 
 #define FBPIXMAPSIZE	(1024 * 8)
 
@@ -1048,6 +1067,9 @@ fb_blank(struct fb_info *info, int blank)
 {	
 	struct fb_event event;
 	int ret = -EINVAL, early_ret;
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("Enter %s, blank_mode = [%d].\n",__func__,blank);
+#endif
 
  	if (blank > FB_BLANK_POWERDOWN)
  		blank = FB_BLANK_POWERDOWN;
@@ -1056,10 +1078,8 @@ fb_blank(struct fb_info *info, int blank)
 	event.data = &blank;
 
 	early_ret = fb_notifier_call_chain(FB_EARLY_EVENT_BLANK, &event);
-
 	if (info->fbops->fb_blank)
  		ret = info->fbops->fb_blank(blank, info);
-
 	if (!ret)
 		fb_notifier_call_chain(FB_EVENT_BLANK, &event);
 	else {
@@ -1070,6 +1090,9 @@ fb_blank(struct fb_info *info, int blank)
 		if (!early_ret)
 			fb_notifier_call_chain(FB_R_EARLY_EVENT_BLANK, &event);
 	}
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("Exit %s, blank_mode = [%d].\n",__func__,blank);
+#endif
 
  	return ret;
 }

@@ -83,6 +83,8 @@ struct csid_device {
 	struct csid_ctrl_t *ctrl_reg;
 	uint32_t num_clk;
 	uint32_t num_clk_src_info;
+	/*add a delay work for read mipi packet number when stream on*/
+	struct delayed_work packet_num_work;
 
 	struct clk *csid_clk[11];
 };

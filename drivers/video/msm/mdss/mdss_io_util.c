@@ -242,6 +242,10 @@ int msm_dss_enable_vreg(struct dss_vreg *in_vreg, int num_vreg, int enable)
 		}
 	} else {
 		for (i = num_vreg-1; i >= 0; i--)
+		#ifdef CONFIG_HUAWEI_LCD
+			if(strcmp(in_vreg[i].vreg_name, "vddio") && strcmp(in_vreg[i].vreg_name, "vdd"))
+			{
+		#endif
 			if (regulator_is_enabled(in_vreg[i].vreg)) {
 				if (in_vreg[i].pre_off_sleep)
 					msleep(in_vreg[i].pre_off_sleep);
@@ -251,6 +255,9 @@ int msm_dss_enable_vreg(struct dss_vreg *in_vreg, int num_vreg, int enable)
 				if (in_vreg[i].post_off_sleep)
 					msleep(in_vreg[i].post_off_sleep);
 			}
+		#ifdef CONFIG_HUAWEI_LCD
+			}
+		#endif
 	}
 	return rc;
 
