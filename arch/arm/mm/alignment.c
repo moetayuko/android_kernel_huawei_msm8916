@@ -1007,6 +1007,7 @@ static int __init alignment_init(void)
 	hook_ifault_code(FAULT_CODE_ALIGNMENT, do_ialignment, SIGBUS,
 			BUS_ADRALN, "alignment exception");
 #endif
+
 	/*
 	 * ARMv6K and ARMv7 use fault status 3 (0b00011) as Access Flag section
 	 * fault, not as alignment error.
