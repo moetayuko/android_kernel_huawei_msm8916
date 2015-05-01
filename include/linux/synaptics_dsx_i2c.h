@@ -236,7 +236,6 @@ struct synaptics_rmi4_device_info {
 #define TP_DBG  4
 #define TP_VDBG  5
 extern int synaptics_dsx_debug_mask;
-extern int KERNEL_HWFLOW;
 #ifndef tp_log_err
 #define tp_log_err(x...)                \
 do{                                     \
@@ -262,7 +261,7 @@ do{                                     \
 #ifndef tp_log_info
 #define tp_log_info(x...)               \
 do{                                     \
-    if( (KERNEL_HWFLOW) && (synaptics_dsx_debug_mask >= TP_INFO))  \
+    if (synaptics_dsx_debug_mask >= TP_INFO)  \
     {                                   \
         printk(KERN_ERR "[SYNAP] " x); \
     }                                   \
@@ -273,7 +272,7 @@ do{                                     \
 #ifndef tp_log_debug
 #define tp_log_debug(x...)              \
 do{                                     \
-    if((KERNEL_HWFLOW) &&( synaptics_dsx_debug_mask >= TP_DBG ))   \
+    if (synaptics_dsx_debug_mask >= TP_DBG )   \
     {                                   \
         printk(KERN_ERR "[SYNAP] " x); \
     }                                   \
@@ -284,7 +283,7 @@ do{                                     \
 #ifndef tp_log_vdebug
 #define tp_log_vdebug(x...)              \
 do{                                     \
-    if((KERNEL_HWFLOW) &&( synaptics_dsx_debug_mask >= TP_VDBG ))   \
+    if (synaptics_dsx_debug_mask >= TP_VDBG )   \
     {                                   \
         printk(KERN_ERR "[SYNAP_V] " x); \
     }                                   \

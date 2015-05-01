@@ -742,7 +742,6 @@ enum iris_xfr_t {
 #define FMDBG(fmt, args...) \
         do \
         { \
-                if (KERNEL_HWFLOW) \
                 pr_info("iris_radio: " fmt, ##args); \
         }while(0)
 

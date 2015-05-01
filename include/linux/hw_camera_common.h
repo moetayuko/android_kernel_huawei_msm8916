@@ -38,7 +38,7 @@ extern unsigned int hw_cmr_log_mask;    /*dynamic camera log mask */
 #ifndef CMR_LOGD
 #define CMR_LOGD(...)\
     do{\
-        if (KERNEL_HWFLOW && HW_CMR_LOGSWC && (hw_cmr_log_mask & HW_CMR_LOG_DBG))\
+        if (HW_CMR_LOGSWC && (hw_cmr_log_mask & HW_CMR_LOG_DBG))\
             printk(KERN_DEBUG"D/[HWCamera] "HW_CMR_LOG_TAG": " __VA_ARGS__);\
     }while(0)
 #endif
@@ -46,7 +46,7 @@ extern unsigned int hw_cmr_log_mask;    /*dynamic camera log mask */
 #ifndef CMR_LOGI
 #define CMR_LOGI(...)\
     do{\
-        if (KERNEL_HWFLOW && HW_CMR_LOGSWC && (hw_cmr_log_mask & HW_CMR_LOG_INFO))\
+        if (HW_CMR_LOGSWC && (hw_cmr_log_mask & HW_CMR_LOG_INFO))\
             pr_info("I/[HWCamera] "HW_CMR_LOG_TAG": " __VA_ARGS__);\
     }while(0)
 #endif

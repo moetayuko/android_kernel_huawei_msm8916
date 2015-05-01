@@ -65,11 +65,6 @@ int console_printk[4] = {
 	DEFAULT_CONSOLE_LOGLEVEL,	/* default_console_loglevel */
 };
 
-#ifdef CONFIG_HUAWEI_KERNEL
-int KERNEL_HWFLOW = CONFIG_DEBUG_HUAWEI_FLOW_LOGLEVEL;
-EXPORT_SYMBOL(KERNEL_HWFLOW);
-#endif
-
 /*
  * Low level drivers may need that to know if they can schedule in
  * their unblank() callback or not. So let's export it.

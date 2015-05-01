@@ -75,11 +75,10 @@ do{											\
 }while(0)
 #endif
 
-/*KERNEL_HWFLOW is for controlling all the log of devices*/
 #ifndef LCD_LOG_DBG
 #define LCD_LOG_DBG( x...)					\
 do{											\
-	if( (KERNEL_HWFLOW) && (lcd_debug_mask >= LCD_DBG) )			\
+	if (lcd_debug_mask >= LCD_DBG)			\
 	{										\
 		printk(KERN_ERR "[LCD_DBG] " x);	\
 	}										\

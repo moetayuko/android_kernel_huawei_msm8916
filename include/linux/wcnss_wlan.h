@@ -42,21 +42,19 @@ do{                                     \
 #ifndef wlan_log_info
 #define wlan_log_info(x...)               \
 do{                                     \
-    if( ((KERNEL_HWFLOW) && (wlan_log_debug_mask >= WLAN_INFO)) || (wcnss_debug_mask_get() >= WLAN_ERROR) )  \
+    if( (wlan_log_debug_mask >= WLAN_INFO) || (wcnss_debug_mask_get() >= WLAN_ERROR) )  \
     {                                   \
         printk(KERN_ERR "wlan:" x); \
     }                                   \
                                         \
 }while(0)
 #endif
-/* the INFO level log must add the KERNEL_HWFLOW for condition */
-/*After the produce released, KERNEL_HWFLOW will be set to false by the PMO to close the INFO level log */
 
 /* debug log */
 #ifndef wlan_log_debug
 #define wlan_log_debug(x...)              \
 do{                                     \
-    if( ((KERNEL_HWFLOW) &&( wlan_log_debug_mask >= WLAN_DBG )) || (wcnss_debug_mask_get() >= WLAN_ERROR) )   \
+    if( ( wlan_log_debug_mask >= WLAN_DBG ) || (wcnss_debug_mask_get() >= WLAN_ERROR) )   \
     {                                   \
         printk(KERN_ERR "wlan:" x); \
     }                                   \
@@ -64,7 +62,6 @@ do{                                     \
 }while(0)
 #endif
 /* closed at all times default*/
-/*After the produce released, KERNEL_HWFLOW will be set to false by the PMO to close the DEBUG level log */
 #endif
 
 enum wcnss_opcode {

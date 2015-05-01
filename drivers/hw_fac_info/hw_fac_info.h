@@ -20,7 +20,6 @@ DateTime: 2014/07/16
 
 #define HW_FAC_TAG  "[HW_FAC_INFO] "
 
-extern int KERNEL_HWFLOW;
 extern int hw_fac_info_debug_mask;
 
 /*ERROR*/
@@ -39,7 +38,7 @@ do{                                     \
 #ifndef fac_log_info
 #define fac_log_info(x...)               \
 do{                                     \
-    if( (KERNEL_HWFLOW) && (hw_fac_info_debug_mask >= FAC_INFO))  \
+    if (hw_fac_info_debug_mask >= FAC_INFO)  \
     {                                   \
         printk(KERN_ERR HW_FAC_TAG x); \
     }                                   \

@@ -120,7 +120,6 @@ enum goodix_gesture_num {
 #define TP_INFO 3
 #define TP_DBG  4
 extern int goodix_debug_mask;
-extern int KERNEL_HWFLOW;
 #ifndef tp_log_err
 #define tp_log_err(x...)                  \
 do{                                       \
@@ -146,7 +145,7 @@ do{                                     \
 #ifndef tp_log_info
 #define tp_log_info(x...)                 \
 do{                                       \
-    if( (KERNEL_HWFLOW) && (goodix_debug_mask >= TP_INFO) )  \
+    if (goodix_debug_mask >= TP_INFO)  \
     {                                     \
         pr_err("[GTP_INFO] " x); \
     }                                     \
@@ -157,7 +156,7 @@ do{                                       \
 #ifndef tp_log_debug
 #define tp_log_debug(x...)                \
 do{                                       \
-    if( (KERNEL_HWFLOW) && (goodix_debug_mask >= TP_DBG) )  \
+    if (goodix_debug_mask >= TP_DBG)  \
     {                                     \
         pr_err("[GTP_DBG] " x);  \
     }                                     \

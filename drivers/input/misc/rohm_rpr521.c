@@ -89,13 +89,12 @@ module_param_named(rpr521_pwave, rpr521_pwave_value, int, S_IRUGO | S_IWUSR | S_
     if (rpr521_debug_mask >=0) \
         printk(KERN_ERR x);\
     } while (0)
-/*KERNEL_HWFLOW is for radar using to control all the log of devices*/
 #define RPR521_INFO(x...) do {\
-    if (KERNEL_HWFLOW && (rpr521_debug_mask >=0)) \
+    if (rpr521_debug_mask >=0) \
         printk(KERN_ERR x);\
     } while (0)
 #define RPR521_FLOW(x...) do {\
-    if (KERNEL_HWFLOW && (rpr521_debug_mask >=1)) \
+    if (rpr521_debug_mask >=1) \
         printk(KERN_ERR x);\
     } while (0)
 
@@ -554,7 +553,6 @@ static void rpr521_ps_report_event(struct i2c_client *client)
 		data->ps_data = ret ;
 	}
 #else
-        //here 3 means read register 43H¡¢44H¡¢45H one time
 	ret = rpr521_i2c_read_buf(client, REG_PERSISTENCE, 3, ps_info);
 
 	if( ret < 0 )

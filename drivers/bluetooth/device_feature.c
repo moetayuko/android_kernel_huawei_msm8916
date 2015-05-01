@@ -48,8 +48,7 @@
 #define FMDBG(fmt, args...) \
 	do \
 	{ \
-		  if (KERNEL_HWFLOW) \
-			pr_info("bt_fm_feature: " fmt, ##args); \
+		pr_info("bt_fm_feature: " fmt, ##args); \
 	} while (0)
 #undef FMDERR
 #define FMDERR(fmt, args...) pr_err("bt_fm_feature: " fmt, ##args)

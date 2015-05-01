@@ -22,7 +22,7 @@
 #ifndef CMR_LOGD
 #define CMR_LOGD(...)\
     do{\
-        if (KERNEL_HWFLOW && HW_CMR_LOGSWC)\
+        if (HW_CMR_LOGSWC)\
             printk(KERN_DEBUG"D/[HWCamera] "HW_CMR_LOG_TAG": " __VA_ARGS__);\
     }while(0)
 #endif

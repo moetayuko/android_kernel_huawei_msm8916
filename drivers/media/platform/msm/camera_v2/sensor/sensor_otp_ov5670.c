@@ -29,7 +29,7 @@
 #ifndef CMR_LOGI
 #define CMR_LOGI(...)\
     do{\
-        if (KERNEL_HWFLOW && HW_CMR_LOGSWC)\
+        if (HW_CMR_LOGSWC)\
             pr_info("I/[HWCamera] "HW_CMR_LOG_TAG": " __VA_ARGS__);\
     }while(0)
 #endif

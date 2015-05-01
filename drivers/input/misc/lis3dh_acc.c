@@ -111,11 +111,11 @@ module_param_named(lis3dh_debug, lis3dh_debug_mask, int, S_IRUGO | S_IWUSR | S_I
         printk(KERN_ERR x);\
     } while (0)
 #define LIS3DH_INFO(x...) do {\
-    if ((KERNEL_HWFLOW)  && (lis3dh_debug_mask >=1)) \
+    if (lis3dh_debug_mask >=1) \
         printk(KERN_ERR x);\
     } while (0)
 #define LIS3DH_DEBUG(x...) do {\
-    if ((KERNEL_HWFLOW)  && (lis3dh_debug_mask >=2)) \
+    if (lis3dh_debug_mask >=2) \
         printk(KERN_ERR x);\
     } while (0)
 #endif

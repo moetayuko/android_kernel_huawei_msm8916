@@ -101,7 +101,7 @@ module_param_named(akm8789_debug_mask, akm8789_debug_mask, int, 0664);
 
 #define AK8789_FLOWMSG(format, args...)\
 do{\
-	if( (KERNEL_HWFLOW) && (akm8789_debug_mask >= AK8789_LOG_FLOW))\
+	if (akm8789_debug_mask >= AK8789_LOG_FLOW)\
 	{\
 		printk(KERN_ERR "[%s] (line: %u) " format "\n",__FUNCTION__, __LINE__, ##args);\
 	}\
@@ -109,7 +109,7 @@ do{\
 
 #define AK8789_INFOMSG(format, args...)\
 do{\
-	if( (KERNEL_HWFLOW) && (akm8789_debug_mask >= AK8789_LOG_INFO))\
+	if (akm8789_debug_mask >= AK8789_LOG_INFO)\
 	{\
 		printk(KERN_ERR "[%s] (line: %u) " format "\n",__FUNCTION__, __LINE__, ##args);\
 	}\
