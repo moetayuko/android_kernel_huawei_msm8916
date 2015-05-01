@@ -1673,11 +1673,11 @@ static int is_usb_ovp(struct qpnp_lbc_chip *chip)
 {
 	int rc = 0;
 	u8 usbin_valid_rt_sts = 0;
-	rc = qpnp_lbc_read(chip, chip->usb_chgpth_base + USB_PTH_STS_REG,
+	rc = qpnp_lbc_read(chip, chip->usb_chgpth_base + INT_RT_STS_REG,
 				&usbin_valid_rt_sts, 1);
 	if (rc) {
 			pr_err("spmi read failed: addr=%03X, rc=%d\n",
-				chip->usb_chgpth_base + USB_PTH_STS_REG, rc);
+				chip->usb_chgpth_base + INT_RT_STS_REG, rc);
 				return rc;
 	}
 
@@ -2095,11 +2095,11 @@ static int get_running_test_result(struct qpnp_lbc_chip *chip)
 			result |= BATTERY_HEALTH;
 		}
 
-		rc = qpnp_lbc_read(chip, chip->usb_chgpth_base + USB_PTH_STS_REG,
+		rc = qpnp_lbc_read(chip, chip->usb_chgpth_base + INT_RT_STS_REG,
 				&usbin_valid_rt_sts, 1);
 		if (rc) {
 			pr_err("spmi read failed: addr=%03X, rc=%d\n",
-				chip->usb_chgpth_base + USB_PTH_STS_REG, rc);
+				chip->usb_chgpth_base + INT_RT_STS_REG, rc);
 		}else{
 			if ((usbin_valid_rt_sts & USB_VALID_MASK)== USB_VALID_OVP_VALUE) {
 				result |= CHARGER_OVP;
