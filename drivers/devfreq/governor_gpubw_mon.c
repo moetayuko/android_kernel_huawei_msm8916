@@ -15,7 +15,7 @@
 #include <linux/module.h>
 #include <linux/msm_adreno_devfreq.h>
 
-#include "devfreq_trace.h"
+#include <trace/devfreq_trace.h>
 #include "governor.h"
 
 #define MIN_BUSY                1000
