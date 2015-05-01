@@ -56,10 +56,6 @@
 #define USB_UPDATE_RESET_FLAG   "usbupdate"
 #endif
 
-#ifdef CONFIG_FEATURE_HUAWEI_EMERGENCY_DATA
-#define MOUNTFAIL_MAGIC_NUM 0x77665527
-#endif
-
 #if defined(CONFIG_HUAWEI_DEBUG_MODE) || defined(CONFIG_HUAWEI_FACTORY_MODE_ENABLE_DUMP)
 extern char *saved_command_line;
 #endif
@@ -324,10 +320,6 @@ static void msm_restart_prepare(const char *cmd)
 #ifdef CONFIG_HUAWEI_KERNEL
 		}  else if (!strncmp(cmd, "emergency_restart", 17)) {
             pr_notice("do nothing\n");
-#endif
-#ifdef CONFIG_FEATURE_HUAWEI_EMERGENCY_DATA
-		} else if (!strncmp(cmd, "mountfail", strlen("mountfail"))) {
-		    __raw_writel(MOUNTFAIL_MAGIC_NUM, restart_reason);
 #endif
 #ifdef CONFIG_HUAWEI_KERNEL
 		} else if (!strncmp(cmd, "huawei_rtc", 10)) {
