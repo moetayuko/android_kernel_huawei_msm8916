@@ -36,11 +36,6 @@
 #ifndef CONFIG_LOGCAT_SIZE
 #define CONFIG_LOGCAT_SIZE 256
 #endif
-#if defined(CONFIG_HUAWEI_KERNEL)
-/*<qindiwen 106479 20130607 begin */
-static int minor_of_power = 0;
-/* qindiwen 106479 20130607 end>*/
-#endif
 
 /**
  * struct logger_log - represents a specific log, such as 'main' or 'radio'
@@ -538,99 +533,6 @@ static ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	return ret;
 }
 
-static struct logger_log *get_log_from_name(const char* name)
-{
-	struct logger_log *log;
-
-	list_for_each_entry(log, &log_list, logs)
-		if (!strncmp(log->misc.name, name, strlen(log->misc.name)))
-			return log;
-	return NULL;
-}
-
-static int calc_iovc_ki_left(struct iovec *iov, int nr_segs)
-{
-	int ret = 0;
-	int seg;
-	for (seg = 0; seg < nr_segs; seg++) {
-		ssize_t len = (ssize_t)iov[seg].iov_len;
-		ret += len;
-	}
-	return ret;
-}
-
-ssize_t write_log_to_exception(const char* category, char level, const char* msg)
-{
-	struct logger_log *log = get_log_from_name(LOGGER_LOG_EXCEPTION);
-
-	struct logger_entry header;
-	struct timespec now;
-	ssize_t ret = 0;
-	struct iovec vec[4];
-	struct iovec *iov = vec;
-	int nr_segs = sizeof(vec)/sizeof(vec[0]);
-
-	pr_info("%s:%s\n",__func__,msg);
-	/*according to the arguments, fill the iovec struct  */
-	vec[0].iov_base   = (unsigned char *) &level;
-	vec[0].iov_len    = 1;
-
-	vec[1].iov_base   = "message";
-	vec[1].iov_len    = strlen("message");  //here won't add \0
-
-	vec[2].iov_base   = (void *) category;
-	vec[2].iov_len    = strlen(category) + 1;
-
-	vec[3].iov_base   = (void *) msg;
-	vec[3].iov_len    = strlen(msg) + 1;
-
-	now = current_kernel_time();
-	header.pid = 0;
-	header.tid = 0;
-	header.sec = now.tv_sec;
-	header.nsec = now.tv_nsec;
-	header.euid = 0;
-	header.len = min(calc_iovc_ki_left(vec,nr_segs),LOGGER_ENTRY_MAX_PAYLOAD);
-	header.hdr_size = sizeof(struct logger_entry);
-
-	/* null writes succeed, return zero */
-	if (unlikely(!header.len))
-		return 0;
-
-	mutex_lock(&log->mutex);
-
-	/*
-	 * Fix up any readers, pulling them forward to the first readable
-	 * entry after (what will be) the new write offset. We do this now
-	 * because if we partially fail, we can end up with clobbered log
-	 * entries that encroach on readable buffer.
-	 */
-	fix_up_readers(log, sizeof(struct logger_entry) + header.len);
-
-	do_write_log(log, &header, sizeof(struct logger_entry));
-
-	while (nr_segs-- > 0) {
-		size_t len;
-		ssize_t nr;
-
-		/* figure out how much of this vector we can keep */
-		len = min_t(size_t, iov->iov_len, header.len - ret);
-
-		/* write out this segment's payload */
-		do_write_log(log, iov->iov_base, len);
-
-		iov++;
-		ret += nr;
-	}
-
-	mutex_unlock(&log->mutex);
-
-	/* wake up any blocked readers */
-	wake_up_interruptible(&log->wq);
-
-	return ret;
-}
-EXPORT_SYMBOL(write_log_to_exception);
 static struct logger_log *get_log_from_minor(int minor)
 {
 	struct logger_log *log;
@@ -826,15 +728,6 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		reader = file->private_data;
 		ret = logger_set_version(reader, argp);
 		break;
-		/*<qindiwen 106479 20130607 begin */
-#if defined(CONFIG_HUAWEI_KERNEL)
-		case FIONREAD:
-			if (minor_of_power == log->misc.minor) {
-				ret = -ENOTTY;
-			}
-		break;
-#endif
-		/* qindiwen 106479 20130607 end>*/
 	}
 
 	mutex_unlock(&log->mutex);
@@ -918,10 +811,7 @@ out_free_buffer:
 static int __init logger_init(void)
 {
 	int ret;
-#if defined(CONFIG_HUAWEI_KERNEL)
-	struct logger_log *log;
-#endif
-	
+
 	ret = create_log(LOGGER_LOG_MAIN, CONFIG_LOGCAT_SIZE*1024);
 	if (unlikely(ret))
 		goto out;
@@ -937,23 +827,8 @@ static int __init logger_init(void)
 	ret = create_log(LOGGER_LOG_SYSTEM, CONFIG_LOGCAT_SIZE*1024);
 	if (unlikely(ret))
 		goto out;
-#ifdef CONFIG_HUAWEI_KERNEL
-	ret = create_log(LOGGER_LOG_EXCEPTION, CONFIG_LOGCAT_SIZE*1024);
-	if (unlikely(ret))
-		goto out;
-#endif
 
 out:
-#if defined(CONFIG_HUAWEI_KERNEL)
-	/*<qindiwen 106479 20130607 begin */
-	ret = create_log(LOGGER_LOG_POWER, CONFIG_LOGCAT_SIZE*1024);
-	if (unlikely(ret))
-		return ret;
-	log = get_log_from_name(LOGGER_LOG_POWER);
-	minor_of_power = log->misc.minor;
-	/* qindiwen 106479 20130607 end>*/
-#endif
-
 	return ret;
 }
 
