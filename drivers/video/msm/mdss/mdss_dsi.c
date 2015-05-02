@@ -127,11 +127,8 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata, int enable)
 					__func__, ret);
 			goto error;
 		}
-		/* don't use pinctrl mode to ctrl gpio */
-#ifndef CONFIG_HUAWEI_LCD
 		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 			pr_debug("reset disable: pinctrl not enabled\n");
-#endif
 
 		for (i = DSI_MAX_PM - 1; i >= 0; i--) {
 			/*
@@ -823,11 +820,8 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	 * data lanes for LP11 init
 	 */
 	if (mipi->lp11_init) {
-	/* don't use pinctrl mode to ctrl gpio */
-	#ifndef CONFIG_HUAWEI_LCD
 		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
 			pr_debug("reset enable: pinctrl not enabled\n");
-	#endif
 		mdss_dsi_panel_reset(pdata, 1);
 	}
 	pdata->panel_info.panel_power_on = 1;
@@ -1820,17 +1814,6 @@ int dsi_panel_device_register(struct device_node *pan_node,
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio))
 		pr_err("%s:%d, reset gpio not specified\n",
 						__func__, __LINE__);
-/* revert vsp & vsn modify */
-#ifdef CONFIG_HUAWEI_LCD
-	else
-	{
-		rc = gpio_request(ctrl_pdata->rst_gpio, "disp_rst_n");
-		if (rc) {
-			pr_err("request reset gpio failed, rc=%d\n",
-				rc);
-		}
-	}
-#endif
 
 	if (pinfo->mode_gpio_state != MODE_GPIO_NOT_VALID) {
 
