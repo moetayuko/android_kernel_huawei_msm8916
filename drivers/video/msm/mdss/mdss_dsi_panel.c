@@ -114,8 +114,8 @@ u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 #ifdef CONFIG_HUAWEI_LCD
 	char dcs_cmd[2] = {0x00, 0x00}; /* DTYPE_DCS_READ */
 	struct dsi_cmd_desc dcs_read_cmd = {
-	{	DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(dcs_cmd)},
-		dcs_cmd
+	{DTYPE_DCS_READ, 1, 0, 1, 5, sizeof(dcs_cmd)},
+	dcs_cmd
 	};
 #endif
 
@@ -233,8 +233,6 @@ disp_en_gpio_err:
 	return rc;
 }
 
-/* optimize code */
-
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -271,14 +269,7 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		}
 	#ifdef CONFIG_HUAWEI_LCD
 		LCD_MDELAY(20);
-
-		for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
-			gpio_set_value((ctrl_pdata->rst_gpio),
-				pdata->panel_info.rst_seq[i]);
-			if (pdata->panel_info.rst_seq[++i])
-				usleep(pinfo->rst_seq[i] * 1000);
-		}
-	#else
+	#endif
 		if (!pinfo->panel_power_on) {
 			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 				gpio_set_value((ctrl_pdata->disp_en_gpio), 1);
@@ -293,7 +284,6 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
 				gpio_set_value((ctrl_pdata->bklt_en_gpio), 1);
 		}
-	#endif
 
 		if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
 			if (pinfo->mode_gpio_state == MODE_GPIO_HIGH)

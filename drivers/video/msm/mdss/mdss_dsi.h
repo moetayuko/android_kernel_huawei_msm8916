@@ -294,10 +294,6 @@ struct mdss_dsi_ctrl_pdata {
 	int irq_cnt;
 	int rst_gpio;
 	int disp_en_gpio;
-/* add bias enable vsp/vsn flag */
-	int disp_en_gpio_vsp;
-	int disp_en_gpio_vsn;
-	int disp_te_gpio;
 	int bklt_en_gpio;
 	int mode_gpio;
 	int bklt_ctrl;	/* backlight ctrl */
