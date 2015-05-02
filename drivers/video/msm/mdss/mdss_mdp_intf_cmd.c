@@ -670,14 +670,15 @@ int mdss_mdp_cmd_kickoff(struct mdss_mdp_ctl *ctl, void *arg)
 
 		rc = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_PANEL_ON, NULL);
 		WARN(rc, "intf %d panel on error (%d)\n", ctl->intf_num, rc);
-		/*schedule the esd delay work*/
-#ifdef CONFIG_HUAWEI_LCD
-		mdss_dsi_status_check_ctl(ctl->mfd,true);
-#endif
 
 		mdss_mdp_ctl_intf_event(ctl,
 				MDSS_EVENT_REGISTER_RECOVERY_HANDLER,
 				(void *)&ctx->intf_recovery);
+
+		/*schedule the esd delay work*/
+#ifdef CONFIG_HUAWEI_LCD
+		mdss_dsi_status_check_ctl(ctl->mfd,true);
+#endif
 	}
 
 	MDSS_XLOG(ctl->num, ctl->roi.x, ctl->roi.y, ctl->roi.w,
@@ -735,11 +736,6 @@ int mdss_mdp_cmd_intfs_stop(struct mdss_mdp_ctl *ctl, int session)
 		pr_err("invalid ctx session: %d\n", session);
 		return -ENODEV;
 	}
-
-	/*cancel the esd delay work*/
-#ifdef CONFIG_HUAWEI_LCD
-	mdss_dsi_status_check_ctl(ctl->mfd,false);
-#endif
 
 	ctx->ref_cnt--;
 
@@ -802,6 +798,11 @@ int mdss_mdp_cmd_stop(struct mdss_mdp_ctl *ctl)
 		pr_err("invalid ctx\n");
 		return -ENODEV;
 	}
+
+	/*cancel the esd delay work*/
+#ifdef CONFIG_HUAWEI_LCD
+	mdss_dsi_status_check_ctl(ctl->mfd,false);
+#endif
 
 	list_for_each_entry_safe(handle, tmp, &ctx->vsync_handlers, list)
 		mdss_mdp_cmd_remove_vsync_handler(ctl, handle);
