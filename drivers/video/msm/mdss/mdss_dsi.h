@@ -19,7 +19,6 @@
 #include <mach/scm-io.h>
 #include <linux/irqreturn.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/msm_mdp.h>
 
 #include "mdss_panel.h"
 #include "mdss_dsi_cmd.h"
@@ -510,9 +509,6 @@ static inline struct mdss_dsi_ctrl_pdata *mdss_dsi_get_ctrl_by_index(int ndx)
 
 	return ctrl_list[ndx];
 }
-#ifdef CONFIG_HUAWEI_LCD
-int panel_check_live_status(struct mdss_dsi_ctrl_pdata *ctrl);
-#endif
 
 static inline bool mdss_dsi_ulps_feature_enabled(
 	struct mdss_panel_data *pdata)
