@@ -330,6 +330,10 @@ struct mmc_host {
 #define MMC_CAP2_HS400		(MMC_CAP2_HS400_1_8V | \
 				 MMC_CAP2_HS400_1_2V)
 #define MMC_CAP2_NONHOTPLUG	(1 << 25)	/*Don't support hotplug*/
+#ifdef CONFIG_HUAWEI_KERNEL
+/* Add capabilities for custom functions, from 31 to 1 to avoid conflict with linux caps*/
+#define MMC_CAP2_POWER_OFF_NO_CARD	(1 << 31)        /* when there is no card, power off vdd and vddio*/
+#endif
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
 	int			clk_requests;	/* internal reference counter */

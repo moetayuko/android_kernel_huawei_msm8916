@@ -795,6 +795,10 @@ struct device_type sd_type = {
 	.groups = sd_attr_groups,
 };
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#include <linux/of.h>
+#endif
+
 /*
  * Fetch CID from card.
  */
@@ -803,6 +807,9 @@ int mmc_sd_get_cid(struct mmc_host *host, u32 ocr, u32 *cid, u32 *rocr)
 	int err;
 	u32 max_current;
 	int retries = 10;
+#ifdef CONFIG_HUAWEI_KERNEL
+	struct device_node *UHSI_np = NULL;
+#endif
 
 try_again:
 	if (!retries) {
@@ -828,6 +835,21 @@ try_again:
 	err = mmc_send_if_cond(host, ocr);
 	if (!err)
 		ocr |= SD_OCR_CCS;
+
+	/*remove UHS-I mode of SD 3.0 because hardware do not support it.*/
+#ifdef CONFIG_HUAWEI_KERNEL
+	/*add UHS-I mode for 3.0 sdcard except MMC_CAP_UHS_SDR104,because cherry surport it*/
+	UHSI_np = of_find_compatible_node(NULL,NULL,"huawei,huawei-supply-uhsi");
+	if (NULL == UHSI_np)
+	{
+		host->caps &= ~(MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25 |
+					MMC_CAP_UHS_SDR50 | MMC_CAP_UHS_SDR104 | MMC_CAP_UHS_DDR50);
+	}
+	else
+	{
+		host->caps &= ~MMC_CAP_UHS_SDR104;
+	}
+#endif
 
 	/*
 	 * If the host supports one of UHS-I modes, request the card
