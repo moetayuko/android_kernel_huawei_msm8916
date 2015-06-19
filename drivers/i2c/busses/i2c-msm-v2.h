@@ -543,19 +543,11 @@ struct i2c_msm_resources {
 	struct pinctrl              *pinctrl;
 	struct pinctrl_state        *gpio_state_active;
 	struct pinctrl_state        *gpio_state_suspend;
-	struct pinctrl_state        *gpio_state_defult;
 };
 
 #define I2C_MSM_PINCTRL_ACTIVE       "i2c_active"
 #define I2C_MSM_PINCTRL_SUSPEND        "i2c_sleep"
-#define I2C_MSM_PINCTRL_DEFULT        "i2c_defult"
-#define I2C_MSM_RECOVERY_BUS_TIMES 		5
 
-enum i2c_msm_pinctl_state{
-	I2C_MSM_DFS_ACTIVE,
-	I2C_MSM_DFS_SUSPEND,
-	I2C_MSM_DFS_DEFULT,
-};
 /*
  * i2c_msm_xfer_buf: current xfer position and preprocessed tags
  *

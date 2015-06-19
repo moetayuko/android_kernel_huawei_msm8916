@@ -367,10 +367,6 @@
 				drive-strength = <2>; /* 2 MA */
 				bias-disable;	      /* No PULL */
 			};
-			i2c_0_defult: i2c_0_defult {
-				drive-strength = <2>; /* 2 MA */
-				bias-pull-up; /* pull up */
-			};
 		};
 
 		pmx_i2c_5 {
