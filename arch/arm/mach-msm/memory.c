@@ -166,6 +166,8 @@ huawei_remove_out:
 
 			huawei_reserve_memory_start = memory_start;
 			huawei_reserve_memory_size = memory_size;
+
+			memblock_remove(huawei_reserve_memory_start, huawei_reserve_memory_size);
 		}
 	}
 #endif
