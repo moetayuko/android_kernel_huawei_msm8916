@@ -93,7 +93,7 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 		return;
 	}
 
-	if(!pdsi_status->mfd->panel_power_on)
+	if(pdsi_status->mfd->panel_power_state != MDSS_PANEL_POWER_ON)
 	{
 		pr_err("%s:mipi dsi and panel have suspended!\n", __func__);
 		return;
@@ -142,7 +142,7 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 
 	ret = ctrl_pdata->check_status(ctrl_pdata);
 
-	if ((pdsi_status->mfd->panel_power_on)) {
+	if (pdsi_status->mfd->panel_power_state == MDSS_PANEL_POWER_ON) {
 		if (ret > 0) {
 			schedule_delayed_work(&pdsi_status->check_status,
 				msecs_to_jiffies(interval));
@@ -176,7 +176,7 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 	}
 
 	if (pdsi_status->mfd->shutdown_pending ||
-		!pdsi_status->mfd->panel_power_on) {
+		pdsi_status->mfd->panel_power_state != MDSS_PANEL_POWER_ON) {
 		pr_err("%s: panel off\n", __func__);
 		return;
 	}
