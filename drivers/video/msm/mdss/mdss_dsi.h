@@ -354,7 +354,6 @@ struct mdss_dsi_ctrl_pdata {
 #endif
 
 	bool ulps;
-	bool mmss_clamp;
 	u32 ulps_clamp_ctrl_off;
 	u32 ulps_phyrst_ctrl_off;
 
@@ -415,7 +414,7 @@ void mdss_dsi_clk_req(struct mdss_dsi_ctrl_pdata *ctrl,
 				int enable);
 void mdss_dsi_controller_cfg(int enable,
 				struct mdss_panel_data *pdata);
-void mdss_dsi_sw_reset(struct mdss_panel_data *pdata, bool restore);
+void mdss_dsi_sw_reset(struct mdss_panel_data *pdata);
 
 irqreturn_t mdss_dsi_isr(int irq, void *ptr);
 void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
@@ -446,16 +445,12 @@ int mdss_dsi_bta_status_check(struct mdss_dsi_ctrl_pdata *ctrl);
 int mdss_dsi_reg_status_check(struct mdss_dsi_ctrl_pdata *ctrl);
 bool __mdss_dsi_clk_enabled(struct mdss_dsi_ctrl_pdata *ctrl, u8 clk_type);
 int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl, int enable);
-int mdss_dsi_clamp_ctrl(struct mdss_dsi_ctrl_pdata *ctrl, int enable);
-void mdss_dsi_ctrl_setup(struct mdss_panel_data *pdata);
-
 
 int mdss_dsi_panel_init(struct device_node *node,
 		struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 		bool cmd_cfg_cont_splash);
 int mdss_panel_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
 				char *dst_format);
-void mdss_dsi_dln0_phy_err(struct mdss_dsi_ctrl_pdata *ctrl);
 int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
 		struct mdss_intf_recovery *recovery);
 
