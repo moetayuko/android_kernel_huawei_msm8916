@@ -25,7 +25,6 @@
 #include "mdss_dsi.h"
 #include <linux/log_jank.h>
 #include <misc/app_info.h>
-#include <linux/hw_lcd_common.h>
 extern int get_offline_cpu(void);
 extern unsigned int cpufreq_get(unsigned int cpu);
 #ifdef CONFIG_HUAWEI_LCD
@@ -184,7 +183,7 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 #ifdef CONFIG_HUAWEI_LCD
-	LCD_LOG_DBG("%s: level=%d\n", __func__, level);
+	pr_debug("%s: level=%d\n", __func__, level);
 #endif
 }
 
@@ -276,7 +275,7 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			return rc;
 		}
 	#ifdef CONFIG_HUAWEI_LCD
-		LCD_MDELAY(20);
+		mdelay(20);
 
 		for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
 			gpio_set_value((ctrl_pdata->rst_gpio),
@@ -315,8 +314,8 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 	} else {
 	#ifdef CONFIG_HUAWEI_LCD
 		if(pinfo->mipi_rest_delay){
-			LCD_LOG_INFO("%s:delay is %d\n",__func__,pinfo->mipi_rest_delay);
-			LCD_MDELAY(pinfo->mipi_rest_delay);
+			pr_info("%s:delay is %d\n",__func__,pinfo->mipi_rest_delay);
+			mdelay(pinfo->mipi_rest_delay);
 
 			}
 	#endif
@@ -333,12 +332,12 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		if (gpio_is_valid(ctrl_pdata->mode_gpio))
 			gpio_free(ctrl_pdata->mode_gpio);
 	#ifdef CONFIG_HUAWEI_LCD
-		LCD_MDELAY(10);
+		mdelay(10);
 	#endif
 
 	}
 	/* add for timeout print log */
-	LCD_LOG_INFO("%s: panel reset time = %u,offlinecpu = %d,curfreq = %d\n",
+	pr_info("%s: panel reset time = %u,offlinecpu = %d,curfreq = %d\n",
 		__func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
 	return rc;
 }
@@ -347,7 +346,7 @@ static int mdss_dsi_panel_cabc_ctrl(struct mdss_panel_data *pdata,struct msmfb_c
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	if (pdata == NULL) {
-		LCD_LOG_ERR("%s: Invalid input data\n", __func__);
+		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
@@ -366,10 +365,10 @@ static int mdss_dsi_panel_cabc_ctrl(struct mdss_panel_data *pdata,struct msmfb_c
 				mdss_dsi_panel_cmds_send(ctrl_pdata, &ctrl_pdata->dsi_panel_cabc_video_cmds);
 			break;
 		default:
-			LCD_LOG_ERR("%s: invalid cabc mode: %d\n", __func__, cabc_cfg.mode);
+			pr_err("%s: invalid cabc mode: %d\n", __func__, cabc_cfg.mode);
 			break;
 	}
-	LCD_LOG_INFO("exit %s : CABC mode= %d\n",__func__,cabc_cfg.mode);
+	pr_info("exit %s : CABC mode= %d\n",__func__,cabc_cfg.mode);
 	return 0;
 }
 #endif
@@ -535,22 +534,16 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	if((INVERSION_ON == ctrl->inversion_state) && ctrl ->dsi_panel_inverse_on_cmds.cmd_cnt )
 	{
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->dsi_panel_inverse_on_cmds);
-		LCD_LOG_DBG("%s:display inversion open:inversion_state = [%d]\n",__func__,ctrl->inversion_state);
+		pr_debug("%s:display inversion open:inversion_state = [%d]\n",__func__,ctrl->inversion_state);
 	}
 	if (ctrl->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
-/* remove APR web LCD report log information  */
-#ifdef CONFIG_HUAWEI_DSM
-	lcd_pwr_status.lcd_dcm_pwr_status |= BIT(1);
-	do_gettimeofday(&lcd_pwr_status.tvl_lcd_on);
-	time_to_tm(lcd_pwr_status.tvl_lcd_on.tv_sec, 0, &lcd_pwr_status.tm_lcd_on);
-#endif
 
-	LCD_LOG_INFO("exit %s\n",__func__);
+	pr_info("exit %s\n",__func__);
 #endif
 	pr_debug("%s:-\n", __func__);
 /* add for timeout print log */
-	LCD_LOG_INFO("%s: panel_on_time = %u,offlinecpu = %d,curfreq = %d\n",
+	pr_info("%s: panel_on_time = %u,offlinecpu = %d,curfreq = %d\n",
 			__func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
 #ifdef CONFIG_LOG_JANK
     pr_jank(JL_KERNEL_LCD_POWER_ON, "%s#T:%5lu", "JL_KERNEL_LCD_POWER_ON",getrealtime());
@@ -578,7 +571,7 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
 
 #ifdef CONFIG_HUAWEI_LCD
-	LCD_LOG_INFO("exit %s\n",__func__);
+	pr_info("exit %s\n",__func__);
 #endif
 	pr_debug("%s:-\n", __func__);
 #ifdef CONFIG_LOG_JANK
@@ -593,7 +586,7 @@ static int mdss_dsi_panel_inversion_ctrl(struct mdss_panel_data *pdata,u32 imode
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	int ret = 0;
 	if (pdata == NULL) {
-		LCD_LOG_ERR("%s: Invalid input data\n", __func__);
+		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
@@ -611,10 +604,10 @@ static int mdss_dsi_panel_inversion_ctrl(struct mdss_panel_data *pdata,u32 imode
 			break;
 		default:
 			ret = -EINVAL;
-			LCD_LOG_ERR("%s: invalid inversion mode: %d\n", __func__, imode);
+			pr_err("%s: invalid inversion mode: %d\n", __func__, imode);
 			break;
 	}
-	LCD_LOG_INFO("exit %s ,dot inversion enable= %d \n",__func__,imode);
+	pr_info("exit %s ,dot inversion enable= %d \n",__func__,imode);
 	return ret;
 
 }
@@ -631,14 +624,14 @@ static int mdss_dsi_check_panel_status(struct mdss_panel_data *pdata)
 	int read_length = 1;
 
 	if (pdata == NULL) {
-		LCD_LOG_ERR("%s: Invalid input data\n", __func__);
+		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 	if(ctrl_pdata->skip_reg_read)
 	{
-		LCD_LOG_INFO("exit %s ,skip_reg_read=%d, panel status is ok\n",__func__,ctrl_pdata->skip_reg_read);
+		pr_info("exit %s ,skip_reg_read=%d, panel status is ok\n",__func__,ctrl_pdata->skip_reg_read);
 		return ret;
 	}
 	else
@@ -651,15 +644,12 @@ static int mdss_dsi_check_panel_status(struct mdss_panel_data *pdata)
 
 		do{
 			mdss_dsi_panel_cmd_read(ctrl_pdata,0x0A,0x00,NULL,rdata,read_length);
-			LCD_LOG_INFO("exit %s ,0x0A = 0x%x \n",__func__,rdata[0]);
+			pr_info("exit %s ,0x0A = 0x%x \n",__func__,rdata[0]);
 			count--;
 		}while((expect_value != rdata[0])&&(count>0));
 
 		if(0 == count)
-		{
 			ret = -EINVAL;
-			lcd_report_dsm_err(DSM_LCD_STATUS_ERROR_NO, rdata[0], 0x0A);
-		}
 	
 		return ret;
 	}
@@ -690,10 +680,10 @@ static int mdss_dsi_lcd_set_display_inversion(struct mdss_panel_data *pdata,unsi
 			ctrl_pdata->inversion_state = INVERSION_ON;
 			break;
 		default:
-			LCD_LOG_ERR("%s: invalid inversion mode: %d\n", __func__,inversion_mode);
+			pr_err("%s: invalid inversion mode: %d\n", __func__,inversion_mode);
 			break;
 	}
-	LCD_LOG_INFO("exit %s : inversion mode= %d\n",__func__,inversion_mode);
+	pr_info("exit %s : inversion mode= %d\n",__func__,inversion_mode);
 	return 0;
 }
 
@@ -705,18 +695,18 @@ static int mdss_dsi_check_mipi_crc(struct mdss_panel_data *pdata)
 	int read_length = 1;
 
 	if (pdata == NULL){
-		LCD_LOG_ERR("%s: Invalid input data\n", __func__);
+		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
 	mdss_dsi_panel_cmd_read(ctrl_pdata,0x05,0x00,NULL,&err_num,read_length);
-	LCD_LOG_INFO("exit %s,read 0x05 = %d.\n",__func__,err_num);
+	pr_info("exit %s,read 0x05 = %d.\n",__func__,err_num);
 
 	if(err_num)
 	{
-		LCD_LOG_ERR("%s: mipi crc has %d errors.\n",__func__,err_num);
+		pr_err("%s: mipi crc has %d errors.\n",__func__,err_num);
 		ret = err_num;
 	}
 	return ret;
