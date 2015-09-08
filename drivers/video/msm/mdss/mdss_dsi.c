@@ -552,7 +552,6 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	int cur_power_state;
-	unsigned long timeout = jiffies;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);

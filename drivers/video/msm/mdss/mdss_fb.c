@@ -468,7 +468,7 @@ static ssize_t mdss_store_inversion_mode(struct device *dev,
 	temp = simple_strtoul(buf, last, 0);
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 
-	if ((pdata) && (pdata->set_inversion_mode)&&(mfd->panel_power_on))
+	if ((pdata) && (pdata->set_inversion_mode)&&mdss_fb_is_power_on(mfd))
 	{
 		if(temp != mfd->panel_info->inversion_mode)
 		{
@@ -497,7 +497,7 @@ static ssize_t mdss_show_panel_status(struct device *dev,
 
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 
-	if ((pdata) && (pdata->check_panel_status)&&(mfd->panel_power_on))
+	if ((pdata) && (pdata->check_panel_status)&&mdss_fb_is_power_on(mfd))
 	{
 		ret = pdata->check_panel_status(pdata);
 	}
@@ -527,7 +527,7 @@ static int msm_fb_set_display_inversion(struct msm_fb_data_type *mfd, unsigned i
 	struct mdss_panel_data *pdata = NULL;
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 
-	if ((pdata) && (pdata->lcd_set_display_inversion) && (mfd->panel_power_on))
+	if ((pdata) && (pdata->lcd_set_display_inversion) && mdss_fb_is_power_on(mfd))
 	{
 		ret = pdata->lcd_set_display_inversion(pdata,inversion_mode);
 	}
@@ -548,7 +548,7 @@ static ssize_t mdss_show_mipi_crc_check(struct device *dev,
 	int ret = 0;
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 
-	if ((pdata) && (pdata->check_panel_mipi_crc)&&(mfd->panel_power_on))
+	if ((pdata) && (pdata->check_panel_mipi_crc)&&mdss_fb_is_power_on(mfd))
 	{
 		ret = pdata->check_panel_mipi_crc(pdata);
 	}
@@ -1216,9 +1216,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	struct mdss_panel_data *pdata;
 	u32 temp = bkl_lvl, ad_bl;
 	int ret = -EINVAL;
-	bool is_bl_changed = (bkl_lvl != mfd->bl_level);
 	bool bl_notify_needed = false;
- 	unsigned long timeout;
 
 	/* todo: temporary workaround to support doze mode */
 	if ((bkl_lvl == 0) && (mfd->doze_mode)) {
@@ -3472,7 +3470,7 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		g_cabc_cfg_foresd = cabc_cfg;
 #endif
 		/*if lcd is not resumed, save the cabc_mode value, so it will be set when lcd resume*/
-		if(!mfd->panel_power_on)
+		if(mdss_fb_is_power_off(mfd))
 		{
 			last_cabc_mode = cabc_cfg;
 			last_cabc_setting =true;

@@ -1190,7 +1190,7 @@ void mdss_mdp_handoff_cleanup_pipes(struct msm_fb_data_type *mfd,
  */
 int mdss_mdp_overlay_start(struct msm_fb_data_type *mfd)
 {
-	int rc, ret;
+	int rc;
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	struct mdss_mdp_ctl *ctl = mdp5_data->ctl;
@@ -3443,8 +3443,9 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 ctl_stop:
 	mutex_lock(&mdp5_data->ov_lock);
 #ifdef CONFIG_HUAWEI_LCD
-	if (atomic_dec_return(&ov_active_panels) == 0)
-		mdss_mdp_rotator_release_all();
+			if (atomic_dec_return(
+				&mdp5_data->mdata->active_intf_cnt) == 0)
+				mdss_mdp_rotator_release_all();
 #endif
 	rc = mdss_mdp_ctl_stop(mdp5_data->ctl, mfd->panel_power_state);
 	if (rc == 0) {
