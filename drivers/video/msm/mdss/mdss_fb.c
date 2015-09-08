@@ -1325,7 +1325,9 @@ static int mdss_fb_start_disp_thread(struct msm_fb_data_type *mfd)
 
 	pr_debug("%pS: start display thread fb%d\n",
 		__builtin_return_address(0), mfd->index);
+
 	mdss_fb_get_split(mfd);
+
 	atomic_set(&mfd->commits_pending, 0);
 	mfd->disp_thread = kthread_run(__mdss_fb_display_thread,
 				mfd, "mdss_fb%d", mfd->index);
@@ -1371,6 +1373,9 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 	if (mfd->dcm_state == DCM_ENTER)
 		return -EPERM;
 
+	pr_debug("%pS mode:%d\n", __builtin_return_address(0),
+		blank_mode);
+
 	cur_power_state = mfd->panel_power_state;
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
@@ -1378,12 +1383,14 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 #ifdef CONFIG_HUAWEI_LCD
 		pr_info(" %s:blank_mode is FB_BLANK_UNBLANK when panel on\n",__func__);
 #endif
-	if (mfd->disp_thread == NULL) {
-		ret = mdss_fb_start_disp_thread(mfd);
-		if (ret < 0)
-			return ret;
-	}
 		pr_debug("unblank called. cur pwr state=%d\n", cur_power_state);
+		/* Start Display thread */
+		if (mfd->disp_thread == NULL) {
+			ret = mdss_fb_start_disp_thread(mfd);
+			if (ret < 0)
+				return ret;
+		}
+
 		if (!mdss_panel_is_power_on_interactive(cur_power_state) &&
 			mfd->mdp.on_fnc) {
 #ifdef CONFIG_HUAWEI_LCD
@@ -1410,7 +1417,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 				mfd->panel_info->inversion_mode = COLUMN_INVERSION;
 			#endif
 			} else if (mfd->disp_thread) {
-			mdss_fb_stop_disp_thread(mfd);
+				mdss_fb_stop_disp_thread(mfd);
 			}
 			mutex_lock(&mfd->update.lock);
 			mfd->update.type = NOTIFY_TYPE_UPDATE;
@@ -1485,6 +1492,9 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			mfd->op_enable = false;
 			mutex_lock(&mfd->bl_lock);
 			if (mdss_panel_is_power_off(req_power_state)) {
+				/* Stop Display thread */
+				if (mfd->disp_thread)
+					mdss_fb_stop_disp_thread(mfd);
 #ifndef CONFIG_HUAWEI_LCD
 				mdss_fb_set_backlight(mfd, 0);
 #endif
@@ -1493,10 +1503,6 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 			mfd->panel_power_state = req_power_state;
 			mfd->unset_bl_level = mfd->bl_prev_level;
 			mutex_unlock(&mfd->bl_lock);
-
-			/* Stop Display thread */
-			if (mfd->disp_thread)
-				mdss_fb_stop_disp_thread(mfd);
 
 			ret = mfd->mdp.off_fnc(mfd);
 			if (ret)
@@ -2390,6 +2396,7 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 		/* resources (if any) will be released during blank */
 		if (mfd->mdp.release_fnc)
 			mfd->mdp.release_fnc(mfd, true, pid);
+
 		if (mfd->fb_ion_handle)
 			mdss_fb_free_fb_ion_memory(mfd);
 
@@ -2401,11 +2408,13 @@ static int mdss_fb_release_all(struct fb_info *info, bool release_all)
 			return ret;
 		}
 		atomic_set(&mfd->ioctl_ref_cnt, 0);
-		} else if (release_needed) {
+	} else if (release_needed) {
 		pr_debug("current process=%s pid=%d known pid=%d mfd->ref=%d\n",
 			task->comm, current->tgid, pid, mfd->ref_cnt);
+
 		if (mfd->mdp.release_fnc) {
 			ret = mfd->mdp.release_fnc(mfd, false, pid);
+
 			/* display commit is needed to release resources */
 			if (ret)
 				mdss_fb_pan_display(&mfd->fbi->var, mfd->fbi);
