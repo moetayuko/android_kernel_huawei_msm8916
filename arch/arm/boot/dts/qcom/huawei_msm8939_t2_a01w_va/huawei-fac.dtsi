@@ -1,0 +1,9 @@
+ / {
+        huawei_fac_info {
+                  compatible = "huawei,hw_fac_info";
+                  fac,product_name = "HUAWEI MEDIAPAD T2-A01W";
+                  fac,hardware_ver = "SH0T2A01WM";
+                  fac,software_ver = "MSM8939_T2_A01W_VA";
+                  status = "ok";
+        };
+};

@@ -282,10 +282,14 @@
 		mincpubw-cpufreq {
 		target-dev = <&mincpubw>;
 		cpu-to-dev-map-0 =
-			< 1113600 2636 >,
+			<  200000 2636 >,
+			<  800000 2636 >,
+			< 1113600 5346 >,
 			< 1651200 5346 >;
 		cpu-to-dev-map-4 =
-			<  998400 2636 >,
+			<  200000 2636 >,
+			<  499200 2636 >,
+			<  800000 5346 >,
 			< 1209600 5346 >;
 		};
 
@@ -480,8 +484,11 @@
 
 		qcom,cpr-fuse-corners = <3>;
 		qcom,cpr-voltage-ceiling = <1050000 1150000 1350000>;
-		qcom,cpr-voltage-floor = <1050000 1050000 1100000>;
+		qcom,cpr-voltage-floor = <1050000 1150000 1100000>;
+                /* we support ncp(0x1c , 0x18) & fan */
 		vdd-apc-supply = <&ncp6335d>;
+		vdd-apc-optional-prim-supply = <&fan53555>;
+		vdd-apc-optional-sec-supply = <&ncp6335d_a18>;
 
 		qcom,vdd-mx-corner-map = <4 5 7>;
 		qcom,vdd-mx-vmin-method = <4>;
@@ -589,9 +596,9 @@
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 (20000) 0 0 0 0 0 0 0 (20000) 0 0 0 0 0 0>,
 			<0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>;
 		qcom,cpr-voltage-floor-override =
-			<0xffffffff 0xffffffff 1050000 1050000 1050000 1050000
-			1050000 1050000 1050000 1050000 1050000 1050000 1050000
-			1050000 1050000 1100000 1100000 1100000 1100000 1100000
+			<0xffffffff 0xffffffff 1050000 1050000 1050000 1150000
+			1150000 1150000 1150000 1150000 1150000 1150000 1150000
+			1150000 1150000 1150000 1100000 1100000 1100000 1100000
 			1100000 1100000 1100000 1100000 1100000 1100000 1100000
 			1100000 1100000 1100000>;
 		qcom,cpr-enable;
@@ -626,12 +633,3 @@
 	status = "okay";
 };
 
-&mdss_dsi0 {
-	qcom,platform-regulator-settings = [03 08 07 00 20 07 01];
-	/delete-property/ qcom,regulator-ldo-mode;
-};
-
-&mdss_dsi1 {
-	qcom,platform-regulator-settings = [03 08 07 00 20 07 01];
-	/delete-property/ qcom,regulator-ldo-mode;
-};

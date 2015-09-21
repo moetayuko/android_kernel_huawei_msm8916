@@ -44,6 +44,10 @@
 
 #include "sdhci-pltfm.h"
 
+#include <linux/hw_sd_common.h>
+int emmcsd_debug_mask = EMMC_SD_INFO;
+module_param_named(emmcsd_debug_mask, emmcsd_debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
+
 enum sdc_mpm_pin_state {
 	SDC_DAT1_DISABLE,
 	SDC_DAT1_ENABLE,
@@ -211,6 +215,11 @@ enum sdc_mpm_pin_state {
 /* Timeout value to avoid infinite waiting for pwr_irq */
 #define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
+#define CORE_VENDOR_SPEC_FUNC2 0x110
+#define HC_SW_RST_WAIT_IDLE_DIS (1 << 20)
+#define HC_SW_RST_REQ (1 << 21)
+#define ONE_MID_EN (1 << 25)
+
 static const u32 tuning_block_64[] = {
 	0x00FF0FFF, 0xCCC3CCFF, 0xFFCC3CC3, 0xEFFEFFFE,
 	0xDDFFDFFF, 0xFBFFFBFF, 0xFF7FFFBF, 0xEFBDF777,
@@ -253,6 +262,9 @@ struct sdhci_msm_reg_data {
 	/* is low power mode setting required for this regulator? */
 	bool lpm_sup;
 	bool set_voltage_sup;
+    /* is this regulator needs to power off when there is no card */
+    /* add it for differentiating beteen sdcard needed power off and other cards*/
+    bool is_power_off_without_card;
 };
 
 /*
@@ -1353,7 +1365,31 @@ static int sdhci_msm_dt_parse_vreg_info(struct device *dev,
 
 	return ret;
 }
+#ifdef CONFIG_HUAWEI_KERNEL
+static int sdhci_msm_dt_get_poll_info(void)
+{
+	int ret = 0;
+	char prop_name[MAX_PROP_SIZE];
+	struct device_node *np = NULL;
 
+	/*try to get the device node huawei-polling-support.*/
+	np = of_find_compatible_node(NULL,NULL,"huawei-polling-support");
+	if(!np)
+	{
+		/*if np is NULL,return 0.*/
+		return ret;
+	}
+	snprintf(prop_name, MAX_PROP_SIZE,
+			"%s", "huawei,support-polling");
+	if (of_get_property(np, prop_name, NULL))
+	{
+		/*if we can get huawei,support-polling,return 1.*/
+		ret = 1;
+	}
+
+	return ret;
+}
+#endif
 /* GPIO/Pad data extraction */
 static int sdhci_msm_parse_pinctrl_info(struct device *dev,
 		struct sdhci_msm_pltfm_data *pdata)
@@ -1716,6 +1752,27 @@ static struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev,
 		pdata->mpm_sdiowakeup_int = mpm_int;
 	else
 		pdata->mpm_sdiowakeup_int = -1;
+    /* add node to support power off sdcard when there is no card */
+#ifdef CONFIG_HUAWEI_KERNEL
+    if (of_get_property(np, "huawei,power-off-no-card", NULL))
+    {
+        pdata->caps2 |= MMC_CAP2_POWER_OFF_NO_CARD;
+
+        /*
+        * when need power off sdcard without card, init the is_always_on as false
+        * to balance the value of use_count and reset power.
+        */
+        pdata->vreg_data->vdd_data->is_always_on=false;
+        pdata->vreg_data->vdd_io_data->is_always_on=false;
+
+        pdata->vreg_data->vdd_data->is_power_off_without_card = true;
+        pdata->vreg_data->vdd_io_data->is_power_off_without_card = true;
+    }
+    else
+    {
+        pdata->caps2 &= ~MMC_CAP2_POWER_OFF_NO_CARD;
+    }
+#endif
 
 	return pdata;
 out:
@@ -2043,7 +2100,21 @@ static int sdhci_msm_vreg_enable(struct sdhci_msm_reg_data *vreg)
 		if (ret)
 			return ret;
 	}
-	ret = regulator_enable(vreg->reg);
+#ifdef CONFIG_HUAWEI_KERNEL
+    if (vreg->is_power_off_without_card)
+    {
+        if(!vreg->is_enabled)
+        {
+	        ret = regulator_enable(vreg->reg);
+        }
+    }
+    else
+    {
+        ret = regulator_enable(vreg->reg);
+    }
+#else
+    ret = regulator_enable(vreg->reg);
+#endif
 	if (ret) {
 		pr_err("%s: regulator_enable(%s) failed. ret=%d\n",
 				__func__, vreg->name, ret);
@@ -2127,6 +2198,13 @@ static int sdhci_msm_vreg_reset(struct sdhci_msm_pltfm_data *pdata)
 {
 	int ret;
 
+#ifdef CONFIG_HUAWEI_KERNEL
+    if ((pdata->nonremovable != true) && (pdata->caps2 & MMC_CAP2_POWER_OFF_NO_CARD))
+    {
+        pdata->vreg_data->vdd_data->is_enabled=false;
+        pdata->vreg_data->vdd_io_data->is_enabled=false;
+    }
+#endif
 	ret = sdhci_msm_setup_vreg(pdata, 1, true);
 	if (ret)
 		return ret;
@@ -3081,6 +3159,7 @@ static struct sdhci_ops sdhci_msm_ops = {
 	.reset_workaround = sdhci_msm_reset_workaround,
 };
 
+
 static int sdhci_msm_cfg_mpm_pin_wakeup(struct sdhci_host *host, unsigned mode)
 {
 	int ret = 0;
@@ -3175,7 +3254,100 @@ static void sdhci_set_default_hw_caps(struct sdhci_msm_host *msm_host,
 	caps = readl_relaxed(host->ioaddr + SDHCI_CAPABILITIES);
 	caps &= ~CORE_SYS_BUS_SUPPORT_64_BIT;
 	writel_relaxed(caps, host->ioaddr + CORE_VENDOR_SPEC_CAPABILITIES0);
+
+    /* 
+    * Enable one MID mode for SDCC5 (major 1) on 8916/8939 (minor 0x2e) and 
+    * on 8992 (minor 0x3e) as a workaround to reset for data stuck issue. 
+    */ 
+    if (major == 1 && (minor == 0x2e || minor == 0x3e)) { 
+        host->quirks2 |= SDHCI_QUIRK2_USE_RESET_WORKAROUND; 
+        val = readl_relaxed(host->ioaddr + CORE_VENDOR_SPEC_FUNC2); 
+        writel_relaxed((val | ONE_MID_EN), 
+        host->ioaddr + CORE_VENDOR_SPEC_FUNC2); 
+    } 
 }
+
+/*
+ * To get the gpio infor when SD plugged in, based on the device tree info of SD
+ * return 1, 	mean high active and set MMC_CAP2_CD_ACTIVE_HIGH bit
+ * return 0, 	mean low  active
+ * return -1, 	mean error
+ **/
+#ifdef CONFIG_HUAWEI_KERNEL
+static int sdhci_msm_set_gpio_info(struct sdhci_msm_pltfm_data *pdata)
+{
+	int ret = -1;
+	char prop_name[MAX_PROP_SIZE] = {0};
+	struct device_node *np = NULL;
+
+	if(!pdata)
+	{
+		/*if pdata is NULL,return 0.*/
+		return ret;
+	}
+
+	/*try to get the device node huawei-gpio-info.*/
+	np = of_find_compatible_node(NULL,NULL,"huawei-gpio-info");
+	if(!np)
+	{
+		/*if np is NULL, default is high: return 1.*/
+		pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
+		ret = 1;
+		return ret;
+	}
+
+	snprintf(prop_name, MAX_PROP_SIZE,
+			"%s", "huawei,voltage-active-high");
+	if (of_get_property(np, prop_name, NULL))
+	{
+		pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
+		ret = 1;
+	}
+	else
+	{
+		pdata->caps2 &= ~MMC_CAP2_CD_ACTIVE_HIGH;
+		ret = 0;
+	}
+
+	return ret;
+}
+#endif
+/*
+ * set_always_on - set the values of is_always_on based on the result of get_cd.
+ *
+ * if the card is nonremovable, the values of is_always_on will not be changed.
+ * when the card is removable, and host detect the card,
+ * the is_always_on of vdd and vddop will set as true;
+ * when the card is removable, adb there is no card on slot,
+ * the is_always_on of vdd and vddop will set as false.
+ *
+ */
+#ifdef CONFIG_HUAWEI_KERNEL
+void  set_always_on(struct sdhci_host *host, int get_cd_true){
+
+    struct sdhci_msm_reg_data *vreg_table[2];
+    struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+    struct sdhci_msm_host *msm_host = pltfm_host->priv;
+
+    vreg_table[0] =  msm_host->pdata->vreg_data->vdd_data;
+    vreg_table[1] =  msm_host->pdata->vreg_data->vdd_io_data;
+    if ((msm_host->pdata->nonremovable != true) && (msm_host->pdata->caps2 & MMC_CAP2_POWER_OFF_NO_CARD))
+    {
+        if(get_cd_true)
+        {
+            printk(" in set_always_on, set is_always_on as true.\n ");
+            vreg_table[0]->is_always_on = true;
+            vreg_table[1]->is_always_on = true;
+        }
+        else
+        {
+            printk(" in set_always_on, set is_always_on as false.\n ");
+            vreg_table[0]->is_always_on = false;
+            vreg_table[1]->is_always_on = false;
+        }
+    }
+}
+#endif
 
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
@@ -3228,6 +3400,20 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "DT parsing error\n");
 			goto pltfm_free;
 		}
+#ifdef CONFIG_HUAWEI_KERNEL		
+		if(sdhci_msm_set_gpio_info(msm_host->pdata) == 1)
+		{
+			pr_err("the voltage of gpio is high when insert the sdcard.\n");
+		}
+		else if (sdhci_msm_set_gpio_info(msm_host->pdata) == 0)
+		{
+			pr_err("the voltage of gpio is low when insert the sdcard.\n");
+		}
+		else
+		{
+			pr_err("sdhci_msm_set_gpio_info failed.\n");
+		}
+#endif
 	} else {
 		dev_err(&pdev->dev, "No device tree node\n");
 		goto pltfm_free;
@@ -3463,7 +3649,32 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		msm_host->mmc->caps2 |= MMC_CAP2_NONHOTPLUG;
 
 	init_completion(&msm_host->pwr_irq_completion);
+#ifdef CONFIG_HUAWEI_KERNEL
+	if((!strcmp(mmc_hostname(msm_host->mmc), "mmc1"))&&(sdhci_msm_dt_get_poll_info())) {
+		/*add the polling flag to caps to support polling.*/
+		pr_info("polling has enable sucess.\n");
+		host->mmc->caps |= MMC_CAP_NEEDS_POLL;
+		/*in polling mode, set status_gpio to be unvalued */
+		msm_host->pdata->status_gpio = -1;
+	} else {
+		if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+			/*
+		 	 * Set up the card detect GPIO in active configuration before
+			 * configuring it as an IRQ. Otherwise, it can be in some
+			 * weird/inconsistent state resulting in flood of interrupts.
+			 */
+			sdhci_msm_setup_pins(msm_host->pdata, true);
 
+			ret = mmc_gpio_request_cd(msm_host->mmc,
+					msm_host->pdata->status_gpio);
+			if (ret) {
+				dev_err(&pdev->dev, "%s: Failed to request card detection IRQ %d\n",
+						__func__, ret);
+				goto vreg_deinit;
+			}
+		}
+	}
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
 		/*
 		 * Set up the card detect GPIO in active configuration before
@@ -3480,6 +3691,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			goto vreg_deinit;
 		}
 	}
+#endif
 
 	if ((sdhci_readl(host, SDHCI_CAPABILITIES) & SDHCI_CAN_64BIT) &&
 		(dma_supported(mmc_dev(host->mmc), DMA_BIT_MASK(64)))) {
@@ -3518,7 +3730,17 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Add host failed (%d)\n", ret);
 		goto free_cd_gpio;
 	}
-
+#ifdef CONFIG_HUAWEI_KERNEL
+	/*add UHS-I mode for 3.0 sdcard except MMC_CAP_UHS_SDR104 for RIO,and disable it for ATH.*/
+	if(!strcmp(mmc_hostname(msm_host->mmc), "mmc1")) {
+		if (of_get_property(pdev->dev.of_node, "huawei,support-uhs", NULL)) {
+			msm_host->mmc->caps &= ~MMC_CAP_UHS_SDR104;
+		} else {
+			msm_host->mmc->caps &= ~(MMC_CAP_UHS_SDR12 | MMC_CAP_UHS_SDR25 |
+					MMC_CAP_UHS_SDR50 | MMC_CAP_UHS_SDR104 | MMC_CAP_UHS_DDR50);
+		}
+	}
+#endif
 	msm_host->msm_bus_vote.max_bus_bw.show = show_sdhci_max_bus_bw;
 	msm_host->msm_bus_vote.max_bus_bw.store = store_sdhci_max_bus_bw;
 	sysfs_attr_init(&msm_host->msm_bus_vote.max_bus_bw.attr);
