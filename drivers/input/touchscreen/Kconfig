@@ -1062,4 +1062,6 @@ config INPUT_MT_WRAPPER
 
 	  If unsure, say N.
 
+#delete huawei config
+
 endif

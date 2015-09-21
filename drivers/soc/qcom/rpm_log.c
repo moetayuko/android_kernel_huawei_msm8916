@@ -55,6 +55,10 @@ struct msm_rpm_log_buffer {
 	u32 read_idx;
 	struct msm_rpm_log_platform_data *pdata;
 };
+/*record the sleeplog service runing or not*/
+#ifdef CONFIG_HUAWEI_KERNEL
+static u64 sleeplog_en = 0;
+#endif
 
 /******************************************************************************
  * Internal functions
@@ -230,6 +234,10 @@ static ssize_t msm_rpm_log_file_read(struct file *file, char __user *bufu,
 		return -EAGAIN;
 	}
 
+#ifdef CONFIG_HUAWEI_KERNEL
+    /*if sleep log service is not runing, loop wait for new message*/
+    if (0 == sleeplog_en)
+    {
 	/* loop until new messages arrive */
 	while (buf->len == 0) {
 		cond_resched();
@@ -238,6 +246,8 @@ static ssize_t msm_rpm_log_file_read(struct file *file, char __user *bufu,
 		buf->len = msm_rpm_log_copy(pdata, buf->data, buf->max_len,
 						&(buf->read_idx));
 	}
+    }
+#endif
 
 	out_len = ((buf->len - buf->pos) < count ? buf->len - buf->pos : count);
 
@@ -311,6 +321,33 @@ static const struct file_operations msm_rpm_log_file_fops = {
 	.read    = msm_rpm_log_file_read,
 	.release = msm_rpm_log_file_close,
 };
+
+#ifdef CONFIG_HUAWEI_KERNEL
+static int sleep_log_enable_get(void *data, u64 *val)
+{
+	if (IS_ERR(data) || data == NULL) {
+		pr_err("Function Input Error %ld\n", PTR_ERR(data));
+		return -ENOMEM;
+	}
+
+	*val = sleeplog_en;
+	return 0;
+}
+
+static int sleep_log_enable_set(void *data, u64 val)
+{
+	if (IS_ERR(data) || data == NULL) {
+		pr_err("Function Input Error %ld\n", PTR_ERR(data));
+		return -ENOMEM;
+	}
+
+	sleeplog_en = val;
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(sleep_log_en_fops, sleep_log_enable_get,
+			sleep_log_enable_set, "%llu\n");
+#endif
 
 static int msm_rpm_log_probe(struct platform_device *pdev)
 {
@@ -486,6 +523,12 @@ static int msm_rpm_log_probe(struct platform_device *pdev)
 		}
 		return -ENOMEM;
 	}
+
+#ifdef CONFIG_HUAWEI_KERNEL
+	/*add a node which can be write variable sleeplog_en*/
+	debugfs_create_file("sleep_log_en", S_IRUSR | S_IWUSR,
+					NULL, (void *)"sleep_log_en", &sleep_log_en_fops);
+#endif
 
 	platform_set_drvdata(pdev, dent);
 

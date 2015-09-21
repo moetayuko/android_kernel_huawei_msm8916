@@ -18,6 +18,7 @@
 #include "mdss_panel.h"
 #include "mdss_debug.h"
 #include "mdss_mdp_trace.h"
+#include <linux/hw_lcd_common.h>
 
 #define VSYNC_EXPIRE_TICK 6
 
@@ -616,6 +617,10 @@ static int mdss_mdp_cmd_wait4pingpong(struct mdss_mdp_ctl *ctl, void *arg)
 					rc, ctl->num);
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0", "dsi1",
 					"edp", "hdmi", "panic");
+/* report pingpong dsm error */
+#ifdef CONFIG_HUAWEI_DSM
+			lcd_report_dsm_err(DSM_LCD_MDSS_PINGPONG_ERROR_NO,rc,0);
+#endif
 		}
 		ctx->pp_timeout_report_cnt++;
 		rc = -EPERM;
@@ -894,6 +899,9 @@ int mdss_mdp_cmd_intfs_stop(struct mdss_mdp_ctl *ctl, int session,
 		if (wait_for_completion_timeout(&ctx->stop_comp,
 			STOP_TIMEOUT(hz)) <= 0) {
 			WARN(1, "stop cmd time out\n");
+#ifdef CONFIG_HUAWEI_DSM
+			lcd_report_dsm_err(DSM_LCD_MDSS_CMD_STOP_ERROR_NO,0,0);
+#endif
 			mdss_mdp_irq_disable(MDSS_MDP_IRQ_PING_PONG_RD_PTR,
 				ctx->pp_num);
 			ctx->rdptr_enabled = 0;

@@ -245,6 +245,9 @@ struct msm_fb_data_type {
 	u32 bl_updated;
 	u32 bl_level_old;
 	struct mutex bl_lock;
+#ifdef CONFIG_HUAWEI_LCD
+	struct mutex display_off_lock;
+#endif
 
 	struct platform_device *pdev;
 
@@ -286,6 +289,10 @@ struct msm_fb_data_type {
 
 	u32 wait_for_kickoff;
 	u32 thermal_level;
+#ifdef CONFIG_HUAWEI_LCD
+	u32 frame_updated;
+	struct delayed_work bkl_work;
+#endif
 	int doze_mode;
 
 	int fb_mmap_type;

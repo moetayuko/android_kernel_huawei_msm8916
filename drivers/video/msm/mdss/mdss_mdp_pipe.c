@@ -17,7 +17,7 @@
 #include <linux/errno.h>
 #include <linux/iopoll.h>
 #include <linux/mutex.h>
-
+#include <linux/hw_lcd_common.h>
 #include "mdss_mdp.h"
 #include "mdss_mdp_trace.h"
 
@@ -1061,6 +1061,10 @@ static bool mdss_mdp_check_pipe_in_use(struct mdss_mdp_pipe *pipe)
 
 		mixercfg = mdss_mdp_get_mixercfg(mixer);
 		if ((mixercfg & stage_off_mask) && ctl->play_cnt) {
+/* report pipe dsm error */
+#ifdef CONFIG_HUAWEI_DSM
+			lcd_report_dsm_err(DSM_LCD_MDSS_PIPE_ERROR_NO,mixercfg,0);
+#endif
 			pr_err("BUG. pipe%d is active. mcfg:0x%x mask:0x%x\n",
 				pipe->num, mixercfg, stage_off_mask);
 			BUG();
@@ -1150,7 +1154,9 @@ int mdss_mdp_pipe_fetch_halt(struct mdss_mdp_pipe *pipe)
 
 		pr_err("%pS: pipe%d is not idle. xin_id=%d\n",
 			__builtin_return_address(0), pipe->num, pipe->xin_id);
-
+#ifdef CONFIG_HUAWEI_DSM
+		lcd_report_dsm_err(DSM_LCD_MDSS_PIPE_ERROR_NO,pipe->xin_id,0);
+#endif
 		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 		mutex_lock(&mdata->reg_lock);
 		idle_mask = BIT(pipe->xin_id + 16);

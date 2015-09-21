@@ -1746,9 +1746,8 @@ static int qca199x_probe(struct i2c_client *client,
 
 	/* To keep track if region2 command has been sent to controller */
 	region2_sent = false;
-
-	dev_dbg(&client->dev,
-	"%s: probing qca1990 exited successfully\n",
+	dev_err(&client->dev,
+	"nfc-nci probe: %s, probing qca1990 exited successfully\n",
 		 __func__);
 	return 0;
 

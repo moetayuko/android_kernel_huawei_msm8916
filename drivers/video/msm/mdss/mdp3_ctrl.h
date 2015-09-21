@@ -75,5 +75,7 @@ struct mdp3_session_data {
 };
 
 int mdp3_ctrl_init(struct msm_fb_data_type *mfd);
-
+#ifdef CONFIG_HUAWEI_LCD
+void mdss_dsi_status_check_ctl(struct msm_fb_data_type *mfd, int sheduled);
+#endif
 #endif /* MDP3_CTRL_H */

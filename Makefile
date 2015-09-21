@@ -360,6 +360,7 @@ USERINCLUDE    := \
 		-Iarch/$(hdr-arch)/include/generated/uapi \
 		-I$(srctree)/include/uapi \
 		-Iinclude/generated/uapi \
+		-Idrivers/hw_fac_info \
                 -include $(srctree)/include/linux/kconfig.h
 
 # Use LINUXINCLUDE when you must reference the include/ directory.

@@ -526,6 +526,17 @@ config QPNP_LINEAR_CHARGER
 	  detection and charging. The driver also offers relevant information
 	  to userspace via the power supply framework.
 
+config HUAWEI_HLTHERM_CHARGING
+	bool "High and low tem charging"
+config BQ24296M_CHARGER
+	tristate "Power supply class support"
+#/*delte unused code*/
+	depends on HUAWEI_KERNEL
+config HUAWEI_PMU_DSM
+	tristate "huawei dsm charger"
+	depends on HUAWEI_DSM
+
+
 config MSM_BCL_CTL
 	bool "BCL Framework driver"
 	help

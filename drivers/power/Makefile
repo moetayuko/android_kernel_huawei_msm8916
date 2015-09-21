@@ -70,4 +70,7 @@ obj-$(CONFIG_BATTERY_BCL)	+= battery_current_limit.o
 obj-$(CONFIG_MSM_BCL_CTL)	+= msm_bcl.o
 obj-$(CONFIG_MSM_BCL_PERIPHERAL_CTL) += bcl_peripheral.o
 obj-$(CONFIG_POWER_RESET)	+= reset/
+obj-$(CONFIG_BQ24296M_CHARGER)	+= bq24296m_charger.o
+obj-y				+= huawei/
+obj-$(CONFIG_HUAWEI_PMU_DSM) += huawei_dsm_charger.o
 obj-y				+= qcom/

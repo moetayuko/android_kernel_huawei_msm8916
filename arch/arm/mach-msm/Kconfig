@@ -1050,4 +1050,22 @@ config FSM9900_GSM_NL
 	  The serial port connection can be established to communicate with the
 	  GSM NL module.
 
+config HUAWEI_KERNEL
+	bool "Use huawei code"
+	default n
+	help
+	  use huawei code
+
+config HUAWEI_THERMAL
+	bool "Use huawei thermal code"
+	default n
+	help
+	  Use huawei thermal code
+config HUAWEI_FEATURE_NFF
+	bool "save bootup log to log partition if long power event"
+	depends on HUAWEI_KERNEL
+        default n
+	help
+	  in debug mode,you can use sysrq and dump mode 	 
+
 endif

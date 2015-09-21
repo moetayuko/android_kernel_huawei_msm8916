@@ -87,6 +87,12 @@
 #include <asm/smp.h>
 #endif
 
+#ifdef CONFIG_HUAWEI_FEATURE_NFF
+#include <linux/huawei_boot_log.h>
+#include <linux/kallsyms.h>
+void* boot_log_virt = NULL;
+#endif
+
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
@@ -131,6 +137,7 @@ char __initdata boot_command_line[COMMAND_LINE_SIZE];
 char *saved_command_line;
 /* Command line for parameter parsing */
 static char *static_command_line;
+EXPORT_SYMBOL(saved_command_line);
 
 static char *execute_command;
 static char *ramdisk_execute_command;
@@ -472,6 +479,101 @@ static void __init mm_init(void)
 	vmalloc_init();
 }
 
+#ifdef CONFIG_HUAWEI_FEATURE_NFF
+
+struct boot_log_struct *boot_log = NULL;
+
+static uint16_t
+huawei_nff_calculate_checksum(unsigned char *addr, int len)
+{
+  int nleft = len;
+  unsigned char *w = addr;
+  unsigned short answer;
+  int sum = 0;
+
+  /*
+   *. Our algorithm is simple, using a 32 bit accumulator (sum),
+   *. we add sequential 8 bit words to it, and at the end, fold
+   *. back all the carry bits from the top 16 bits into the lower
+   *. 16 bits.
+   */
+
+  while (nleft > 1){
+    sum += *w++;
+    nleft -= 1;
+  }
+
+  sum = (sum >> 16) + (sum & 0xffff); /* add hi 16 to low 16 */
+  sum += (sum >> 16);/*add carry */
+  answer = ~sum;/* truncate to 16 bits */
+  pr_notice("NFF: Calculated checksum is %x\n", (int)answer);
+  return (answer);
+}
+
+void  huawei_save_nff_kernel_init(void)
+{
+	/* get the previous saved phys address  and convert to cirt address*/
+	uint32_t *checksum = NULL;
+    uint32_t *magic    = NULL;
+
+    boot_log_virt =  ioremap_nocache(HUAWEI_BOOT_LOG_ADDR, HUAWEI_BOOT_LOG_SIZE);
+    checksum = (uint32_t *)((unsigned int)boot_log_virt + MAGIC_NUMBER_SIZE);
+    magic    = (uint32_t*)(boot_log_virt);
+
+     /* If by any chance (version upgreade) the addresses are changed,
+         * We might crash. Lets avoid that difficult to debug scenrio.
+         * We trading it off with the non-availability of NFF logs*/
+        if (*magic != HUAWEI_BOOT_MAGIC_NUMBER) {
+		pr_notice("NFF: Invalid magic number %x %x. Disabled NFF\n", 
+				  *magic, HUAWEI_BOOT_LOG_ADDR);
+        return;
+	}
+
+
+	boot_log = (struct boot_log_struct *)((unsigned int)boot_log_virt + MAGIC_NUMBER_SIZE + CHECKSUM_SIZE);
+	pr_notice("NFF: boot_log=%x\n", (int)boot_log);
+
+
+	if(NULL != boot_log) {
+		/* save log address and size */
+#ifdef CONFIG_KALLSYMS
+		boot_log->kernel_addr = virt_to_phys((void *)kallsyms_lookup_name("__log_buf"));
+#else
+		boot_log->kernel_addr = 0;
+#endif
+#ifdef CONFIG_LOG_BUF_SHIFT
+		boot_log->kernel_log_size = (1 << CONFIG_LOG_BUF_SHIFT);
+#else
+		boot_log->kernel_log_size = 0;
+#endif
+        boot_log->boot_process_mask = boot_log->boot_process_mask | KERNEL_MASK;
+		pr_notice("NFF: Checksum initial :%x, at %p, %x\n", *checksum, checksum, virt_to_phys((void*)checksum));
+		memset(checksum, 0, CHECKSUM_SIZE);
+		*checksum = (uint32_t )huawei_nff_calculate_checksum((unsigned char*)boot_log, sizeof(*boot_log));
+		pr_notice("NFF: Checksum:%x, at %p\n", *checksum, checksum);
+
+		pr_notice("NFF: sbl=%x %d\n", boot_log->sbl_addr, boot_log->sbl_log_size);
+		pr_notice("NFF: aboot=%x %d\n", boot_log->aboot_addr, boot_log->aboot_log_size);
+		pr_notice("NFF: kernel=%x %d\n", boot_log->kernel_addr, boot_log->kernel_log_size);
+		pr_notice("NFF: flag=%x\n", boot_log->boot_process_mask);
+
+		pr_notice("NFF: boot_log phys=%x\n", HUAWEI_BOOT_LOG_ADDR + MAGIC_NUMBER_SIZE + CHECKSUM_SIZE);
+		pr_notice("NFF: checksum phys=%x\n", HUAWEI_BOOT_LOG_ADDR + MAGIC_NUMBER_SIZE);
+
+        /* iounmap removed since the address would be used in reboot time.
+               * We can not do ioremap during reboot since there is a possibility
+               * that reboot can be in the panic in the interrupt context.*/
+	}
+	else {
+		pr_notice("NFF: Error getting bootlog\n");
+	}
+
+
+	return;
+}
+#endif
+
+
 asmlinkage void __init start_kernel(void)
 {
 	char * command_line;
@@ -530,6 +632,9 @@ asmlinkage void __init start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
+#ifdef CONFIG_HUAWEI_FEATURE_NFF
+	huawei_save_nff_kernel_init();
+#endif
 
 	/*
 	 * Set up the scheduler prior starting any interrupts (such as the

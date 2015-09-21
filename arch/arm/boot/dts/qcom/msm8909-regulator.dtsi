@@ -171,9 +171,9 @@
 			status = "okay";
 		pm8909_l8: regulator-l8 {
 			status = "okay";
-			regulator-min-microvolt = <2850000>;
-			regulator-max-microvolt = <2900000>;
-			qcom,init-voltage = <2850000>;
+			regulator-min-microvolt = <2950000>;
+			regulator-max-microvolt = <2950000>;
+			qcom,init-voltage = <2950000>;
 		};
 	};
 

@@ -1644,6 +1644,14 @@ static struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev)
 			pdata->caps |= MMC_CAP_1_2V_DDR
 						| MMC_CAP_UHS_DDR50;
 	}
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (of_get_property(np, "huawei,support-polling", NULL))
+	{
+		/*add the polling flag to caps to support polling.*/
+		pr_info("polling has enable sucess.\n");
+		pdata->caps |= MMC_CAP_NEEDS_POLL;
+	}
+#endif
 
 	if (of_get_property(np, "qcom,nonremovable", NULL))
 		pdata->nonremovable = true;
@@ -3066,6 +3074,52 @@ static void sdhci_set_default_hw_caps(struct sdhci_msm_host *msm_host,
 	writel_relaxed(caps, host->ioaddr + CORE_VENDOR_SPEC_CAPABILITIES0);
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+/*
+ * To get the gpio info when SD plugged in, based on the device tree info of sdcard
+ * return 1, mean high active and set MMC_CAP2_CD_ACTIVE_HIGH bit
+ * return 0, mean low  active and clear MMC_CAP2_CD_ACTIVE_HIGH
+ * return -1, mean has some errors
+ **/
+static int sdhci_msm_set_gpio_info(struct sdhci_msm_pltfm_data *pdata)
+{
+	int ret = -1;
+	char prop_name[MAX_PROP_SIZE] = {0};
+	struct device_node *np = NULL;
+
+	if(!pdata)
+	{
+		/*if pdata is NULL,return 0.*/
+		return ret;
+	}
+
+	/*try to get the device node huawei-gpio-info.*/
+	np = of_find_compatible_node(NULL,NULL,"huawei-gpio-info");
+	if(!np)
+	{
+		/*if np is NULL, default is low: return 0. it is recommended to record the active info by dts*/
+		pdata->caps2 &= ~MMC_CAP2_CD_ACTIVE_HIGH;
+		ret = 0;
+		return ret;
+	}
+
+	snprintf(prop_name, MAX_PROP_SIZE,
+			"%s", "huawei,voltage-active-high");
+	if (of_get_property(np, prop_name, NULL))
+	{
+		pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
+		ret = 1;
+	}
+	else
+	{
+		pdata->caps2 &= ~MMC_CAP2_CD_ACTIVE_HIGH;
+		ret = 0;
+	}
+
+	return ret;
+}
+#endif
+
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
 	struct sdhci_host *host;
@@ -3117,6 +3171,22 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "DT parsing error\n");
 			goto pltfm_free;
 		}
+
+#ifdef CONFIG_HUAWEI_KERNEL
+		if(sdhci_msm_set_gpio_info(msm_host->pdata) == 1)
+		{
+			pr_err("the voltage of gpio is high when insert the sdcard.\n");
+		}
+		else if (sdhci_msm_set_gpio_info(msm_host->pdata) == 0)
+		{
+			pr_err("the voltage of gpio is low when insert the sdcard.\n");
+		}
+		else
+		{
+			pr_err("sdhci_msm_set_gpio_info failed.\n");
+		}
+#endif
+
 	} else {
 		dev_err(&pdev->dev, "No device tree node\n");
 		goto pltfm_free;
@@ -3355,7 +3425,27 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	host->pm_qos_req_dma.type = msm_host->pdata->cpu_affinity_type;
 
 	init_completion(&msm_host->pwr_irq_completion);
-
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (!(host->mmc->caps & MMC_CAP_NEEDS_POLL)&&gpio_is_valid(msm_host->pdata->status_gpio)) {
+		sdhci_msm_setup_pins(msm_host->pdata, true);
+		usleep_range(10000, 10500);
+		ret = mmc_gpio_request_cd(msm_host->mmc,
+			msm_host->pdata->status_gpio);
+		if (ret) {
+			dev_err(&pdev->dev, "%s: Failed to request card detection IRQ %d\n",
+					__func__, ret);
+			goto vreg_deinit;
+		}
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+		/*
+		* enable wake irq as deferred resume is enabled,
+		* we need detect the hot-plug of SD card when suspend.
+		*/
+		enable_irq_wake(host->irq);
+		enable_irq_wake(msm_host->pdata->status_gpio);
+#endif
+	}
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
 		/*
 		 * Set up the card detect GPIO in active configuration before
@@ -3372,7 +3462,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			goto vreg_deinit;
 		}
 	}
-
+#endif
 	if ((sdhci_readl(host, SDHCI_CAPABILITIES) & SDHCI_CAN_64BIT) &&
 		(dma_supported(mmc_dev(host->mmc), DMA_BIT_MASK(64)))) {
 		host->dma_mask = DMA_BIT_MASK(64);
@@ -3650,12 +3740,25 @@ skip_enable_host_irq:
 static int sdhci_msm_suspend(struct device *dev)
 {
 	struct sdhci_host *host = dev_get_drvdata(dev);
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	/*mask mmc_gpio_free_cd function for deferred resume. */
+#else
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+#endif
+
 	int ret = 0;
 
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	/*mask mmc_gpio_free_cd function for deferred resume. */
+#else
+#ifdef CONFIG_HUAWEI_KERNEL
+	if ((!(msm_host->mmc->caps & MMC_CAP_NEEDS_POLL))&&gpio_is_valid(msm_host->pdata->status_gpio))
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio))
+#endif
 		mmc_gpio_free_cd(msm_host->mmc);
+#endif
 
 	if (pm_runtime_suspended(dev)) {
 		pr_debug("%s: %s: already runtime suspended\n",
@@ -3671,17 +3774,31 @@ out:
 static int sdhci_msm_resume(struct device *dev)
 {
 	struct sdhci_host *host = dev_get_drvdata(dev);
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	/*mask mmc_gpio_request_cd function for deferred resume. */
+#else
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+#endif
+
 	int ret = 0;
 
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	/*mask mmc_gpio_request_cd function for deferred resume. */
+#else
+#ifdef CONFIG_HUAWEI_KERNEL
+	if ((!(msm_host->mmc->caps & MMC_CAP_NEEDS_POLL))&&gpio_is_valid(msm_host->pdata->status_gpio)) {
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+#endif
+
 		ret = mmc_gpio_request_cd(msm_host->mmc,
 				msm_host->pdata->status_gpio);
 		if (ret)
 			pr_err("%s: %s: Failed to request card detection IRQ %d\n",
 					mmc_hostname(host->mmc), __func__, ret);
 	}
+#endif
 
 	if (pm_runtime_suspended(dev)) {
 		pr_debug("%s: %s: runtime suspended, defer system resume\n",

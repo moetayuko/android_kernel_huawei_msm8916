@@ -214,6 +214,23 @@ struct camera_vreg_t {
 	const char *custom_vreg_name;
 	enum camera_vreg_type type;
 };
+struct msm_sensor_cam_id_t
+{
+	uint8_t cam_excepted_id;
+};
+
+/*use dtsi get sensor name instead of board id string*/
+#define MAX_SENSOR_CODE_LENGTH 12 //ex: 23060156
+#define MAX_SUPPORT_SENSOR_CODE_COUNT 2
+struct msm_support_sensor_codes_info {
+	char sensor_code_list[MAX_SUPPORT_SENSOR_CODE_COUNT][MAX_SENSOR_CODE_LENGTH];
+};
+
+/* use dtsi get product name instead of board id string */
+#define MAX_PRODUCT_NAME_LENGTH 32
+struct msm_hw_product_name {
+	char product_name[MAX_PRODUCT_NAME_LENGTH];
+};
 
 struct sensorb_cfg_data {
 	int cfgtype;
@@ -314,6 +331,8 @@ struct msm_camera_sensor_slave_info32 {
 	uint8_t  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	uint8_t is_flash_supported;
+	struct dump_reg_info_t *dump_reg_info;
+	uint16_t dump_reg_num;
 };
 
 struct msm_camera_csid_lut_params32 {
@@ -400,6 +419,13 @@ enum msm_sensor_cfg_type_t {
 	CFG_SET_AUTOFOCUS,
 	CFG_CANCEL_AUTOFOCUS,
 	CFG_SET_STREAM_TYPE,
+	CFG_SET_OTP_INFO,
+	CFG_SET_AFC_OTP_INFO,
+	CFG_SET_AWB_OTP_INFO,
+	CFG_WRITE_EXPOSURE_DATA,
+	/* optimize camera print mipi packet and frame count log*/
+	CFG_START_FRM_CNT,
+	CFG_STOP_FRM_CNT
 };
 
 enum msm_actuator_cfg_type_t {
@@ -549,6 +575,9 @@ enum msm_camera_led_config_t {
 	MSM_CAMERA_LED_HIGH,
 	MSM_CAMERA_LED_INIT,
 	MSM_CAMERA_LED_RELEASE,
+	MSM_CAMERA_LED_TORCH = 16,
+	MSM_CAMERA_LED_TORCH_POWER_NORMAL = 32,
+	MSM_CAMERA_LED_TORCH_POWER_ABNORMAL,
 };
 
 struct msm_camera_led_cfg_t {
@@ -576,11 +605,14 @@ struct msm_flash_cfg_data_t {
 	} cfg;
 };
 
+/*use dtsi get sensor name instead of board id string*/
 /* sensor init structures and enums */
 enum msm_sensor_init_cfg_type_t {
 	CFG_SINIT_PROBE,
 	CFG_SINIT_PROBE_DONE,
 	CFG_SINIT_PROBE_WAIT_DONE,
+	CFG_SINIT_GET_HW_PRODUCT_NAME,
+	CFG_SINIT_GET_SENSOR_CODE_LIST,
 };
 
 struct sensor_init_cfg_data {
@@ -590,6 +622,26 @@ struct sensor_init_cfg_data {
 	union {
 		void *setting;
 	} cfg;
+};
+
+struct msm_sensor_afc_otp_info
+{
+    uint16_t starting_dac;
+	uint16_t infinity_dac;
+	uint16_t macro_dac;
+};
+
+struct msm_sensor_awb_otp_info
+{
+	uint16_t RG;
+	uint16_t BG;
+	uint32_t typical_RG;
+	uint32_t typical_BG;
+};
+
+struct msm_sensor_mmi_otp_flag
+{
+	uint16_t mmi_otp_check_flag;
 };
 
 #define VIDIOC_MSM_SENSOR_CFG \
@@ -621,6 +673,9 @@ struct sensor_init_cfg_data {
 
 #define VIDIOC_MSM_SENSOR_INIT_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 10, struct sensor_init_cfg_data)
+
+#define VIDIOC_MSM_SENSOR_GET_AFC_OTP_INFO \
+	_IOWR('V', BASE_VIDIOC_PRIVATE + 11, struct msm_sensor_afc_otp_info)
 
 #define VIDIOC_MSM_OIS_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 11, struct msm_ois_cfg_data)

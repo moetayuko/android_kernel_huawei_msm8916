@@ -110,6 +110,7 @@ enum msm_sensor_power_seq_gpio_t {
 	SENSOR_GPIO_FL_RESET,
 	SENSOR_GPIO_CUSTOM1,
 	SENSOR_GPIO_CUSTOM2,
+	SENSOR_GPIO_CAM_ID,
 	SENSOR_GPIO_MAX,
 };
 
@@ -209,7 +210,20 @@ struct msm_sensor_init_params {
 
 struct msm_sensor_id_info_t {
 	uint16_t sensor_id_reg_addr;
+        enum msm_camera_i2c_data_type sensor_id_data_type;
 	uint16_t sensor_id;
+};
+
+enum dump_reg_operation {
+	DUMP_REG_READ = 0,
+	DUMP_REG_WRITE,
+};
+
+struct dump_reg_info_t {
+	uint16_t addr;
+	uint16_t value;
+	enum dump_reg_operation reg_type;
+	enum msm_camera_i2c_data_type data_type;
 };
 
 struct msm_camera_sensor_slave_info {
@@ -227,12 +241,16 @@ struct msm_camera_sensor_slave_info {
 	uint8_t  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	uint8_t is_flash_supported;
+	struct dump_reg_info_t *dump_reg_info;
+	uint16_t dump_reg_num;
+	struct msm_sensor_cam_id_t *sensor_cam_id;
 };
 
 struct msm_camera_i2c_reg_array {
 	uint16_t reg_addr;
 	uint16_t reg_data;
 	uint32_t delay;
+	enum msm_camera_i2c_data_type data_type;
 };
 
 struct msm_camera_i2c_reg_setting {

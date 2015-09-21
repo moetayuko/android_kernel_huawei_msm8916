@@ -26,6 +26,11 @@
 #include "mdp3.h"
 #include "mdp3_ppp.h"
 
+#ifdef CONFIG_HUAWEI_LCD
+#include <linux/hw_lcd_common.h>
+extern int get_offline_cpu(void);
+extern unsigned int cpufreq_get(unsigned int cpu);
+#endif
 #define VSYNC_EXPIRE_TICK	4
 
 static void mdp3_ctrl_pan_display(struct msm_fb_data_type *mfd);
@@ -700,7 +705,11 @@ static int mdp3_ctrl_on(struct msm_fb_data_type *mfd)
 	struct mdp3_session_data *mdp3_session;
 	struct mdss_panel_data *panel;
 
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("start mdp3_ctrl_on\n");
+#else
 	pr_debug("mdp3_ctrl_on\n");
+#endif
 	mdp3_session = (struct mdp3_session_data *)mfd->mdp.private1;
 	if (!mdp3_session || !mdp3_session->panel || !mdp3_session->dma ||
 		!mdp3_session->intf) {
@@ -708,7 +717,6 @@ static int mdp3_ctrl_on(struct msm_fb_data_type *mfd)
 		return -ENODEV;
 	}
 	mutex_lock(&mdp3_session->lock);
-
 	panel = mdp3_session->panel;
 	/* make sure DSI host is initialized properly */
 	if (panel && mdp3_session->in_splash_screen) {
@@ -799,6 +807,10 @@ static int mdp3_ctrl_on(struct msm_fb_data_type *mfd)
 	mdp3_session->status = 1;
 
 	mdp3_ctrl_pp_resume(mfd);
+/*scheduled the esd delay work*/
+#ifdef CONFIG_HUAWEI_LCD
+	mdss_dsi_status_check_ctl(mfd,true);
+#endif
 on_error:
 	mutex_unlock(&mdp3_session->lock);
 	return rc;
@@ -820,7 +832,10 @@ static int mdp3_ctrl_off(struct msm_fb_data_type *mfd)
 
 	panel = mdp3_session->panel;
 	mutex_lock(&mdp3_session->lock);
-
+/*cancle the esd delay work*/
+#ifdef CONFIG_HUAWEI_LCD
+	mdss_dsi_status_check_ctl(mfd,false);
+#endif
 	if (panel && panel->set_backlight)
 		panel->set_backlight(panel, 0);
 
@@ -840,7 +855,6 @@ static int mdp3_ctrl_off(struct msm_fb_data_type *mfd)
 		rc = panel->event_handler(panel, MDSS_EVENT_BLANK, NULL);
 	if (rc)
 		pr_err("fail to turn off the panel\n");
-
 	rc = mdp3_session->dma->stop(mdp3_session->dma,
 					mdp3_session->intf);
 	if (rc)
@@ -880,6 +894,9 @@ static int mdp3_ctrl_off(struct msm_fb_data_type *mfd)
 	atomic_set(&mdp3_session->dma_done_cnt, 0);
 	mdp3_session->clk_on = 0;
 	mdp3_session->in_splash_screen = 0;
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("exit mdp3_ctrl_off\n");
+#endif
 off_error:
 	mdp3_session->status = 0;
 	mdp3_bufq_deinit(&mdp3_session->bufq_out);
@@ -899,7 +916,11 @@ static int mdp3_ctrl_reset(struct msm_fb_data_type *mfd)
 	struct mdss_panel_data *panel;
 	struct mdp3_notification vsync_client;
 
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("mdp3_ctrl_reset\n");
+#else
 	pr_debug("mdp3_ctrl_reset\n");
+#endif
 	mdp3_session = (struct mdp3_session_data *)mfd->mdp.private1;
 	if (!mdp3_session || !mdp3_session->panel || !mdp3_session->dma ||
 		!mdp3_session->intf) {

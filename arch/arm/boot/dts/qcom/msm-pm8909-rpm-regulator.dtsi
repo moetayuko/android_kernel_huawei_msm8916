@@ -122,7 +122,6 @@
 			status = "disabled";
 		};
 	};
-
 	rpm-regulator-ldoa6 {
 		compatible = "qcom,rpm-smd-regulator-resource";
 		qcom,resource-name = "ldoa";
@@ -135,10 +134,10 @@
 			compatible = "qcom,rpm-smd-regulator";
 			regulator-name = "pm8909_l6";
 			qcom,set = <3>;
-			status = "disabled";
+			regulator-always-on;
+			status = "ok";
 		};
 	};
-
 	rpm-regulator-ldoa7 {
 		compatible = "qcom,rpm-smd-regulator-resource";
 		qcom,resource-name = "ldoa";

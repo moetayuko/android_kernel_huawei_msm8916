@@ -40,6 +40,7 @@
 #include <sound/q6audio-v2.h>
 #include <sound/audio_cal_utils.h>
 
+
 #define TRUE        0x01
 #define FALSE       0x00
 
@@ -636,7 +637,9 @@ int send_asm_custom_topology(struct audio_client *ac)
 unmap:
 	result = q6asm_unmap_cal_memory(cal_block);
 	if (result < 0)
+	{
 		pr_debug("%s: unmap cal failed! %d\n", __func__, result);
+	}
 unlock:
 	mutex_unlock(&cal_data[ASM_CUSTOM_TOP_CAL]->lock);
 done:

@@ -29,6 +29,9 @@
 
 #include <soc/qcom/smem.h>
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#include <soc/qcom/subsystem_restart.h>
+#endif
 
 #include "smem_private.h"
 
@@ -1004,8 +1007,16 @@ static int restart_notifier_cb(struct notifier_block *this,
 		remote_spin_release_all(notifier->processor);
 		break;
 	case SUBSYS_RAMDUMP_NOTIFICATION:
-		if (!(smem_ramdump_dev && notifdata->enable_ramdump))
+        #ifdef CONFIG_HUAWEI_KERNEL
+        if (!(smem_ramdump_dev && notifdata->enable_ramdump && enable_ramdumps))
+        #else
+        if (!(smem_ramdump_dev && notifdata->enable_ramdump))
+        #endif
 			break;
+#ifdef CONFIG_HUAWEI_KERNEL
+		if(!enable_ramdumps)
+			break;
+#endif
 		SMEM_DBG("%s: saving ramdump\n", __func__);
 		/*
 		 * XPU protection does not currently allow the

@@ -48,6 +48,7 @@
 #include "smd_private.h"
 #include "smem_private.h"
 
+
 #define SMSM_SNAPSHOT_CNT 64
 #define SMSM_SNAPSHOT_SIZE ((SMSM_NUM_ENTRIES + 1) * 4 + sizeof(uint64_t))
 #define RSPIN_INIT_WAIT_MS 1000
@@ -140,8 +141,14 @@ struct interrupt_stat interrupt_stats[NUM_SMD_SUBSYSTEMS];
 					  entry * SMSM_NUM_HOSTS + host)
 #define SMSM_INTR_MUX_ADDR(entry)        (smsm_info.intr_mux + entry)
 
+#ifdef CONFIG_HUAWEI_WIFI
+int msm_smd_debug_mask = MSM_SMD_POWER_INFO | MSM_SMD_INFO |
+							MSM_SMSM_POWER_INFO |
+							MSM_SMD_DEBUG|MSM_SMSM_DEBUG|MSM_SMSM_INFO;
+#else
 int msm_smd_debug_mask = MSM_SMD_POWER_INFO | MSM_SMD_INFO |
 							MSM_SMSM_POWER_INFO;
+#endif
 module_param_named(debug_mask, msm_smd_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 void *smd_log_ctx;

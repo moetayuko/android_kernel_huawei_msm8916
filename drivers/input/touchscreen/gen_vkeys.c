@@ -211,8 +211,9 @@ static int vkeys_remove(struct platform_device *pdev)
 	return 0;
 }
 
+//stop gen_vkey.c from probing
 static struct of_device_id vkey_match_table[] = {
-	{ .compatible = "qcom,gen-vkeys",},
+	{ .compatible = "qcom,gen-vkeys-kill",},
 	{ },
 };
 

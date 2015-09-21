@@ -18,6 +18,7 @@
 #include <linux/stringify.h>
 #include <linux/types.h>
 #include <linux/debugfs.h>
+#include <linux/msm_mdp.h>
 
 /* panel id type */
 struct panel_id {
@@ -406,6 +407,10 @@ struct mdss_panel_info {
 
 	uint32_t panel_dead;
 	u32 panel_orientation;
+#ifdef CONFIG_HUAWEI_LCD
+	u32 inversion_mode;
+	u32 delaytime_before_bl;
+#endif
 	bool dynamic_switch_pending;
 	bool is_lpm_mode;
 	bool is_split_display;
@@ -445,6 +450,13 @@ struct mdss_panel_data {
 	int (*event_handler) (struct mdss_panel_data *pdata, int e, void *arg);
 
 	struct mdss_panel_data *next;
+/*Add display color inversion function*/
+#ifdef CONFIG_HUAWEI_LCD
+	int (*config_cabc) (struct mdss_panel_data *pdata,struct msmfb_cabc_config cabc_cfg);
+	int (*set_inversion_mode)(struct mdss_panel_data *pdata,u32 imode);
+	int (*check_panel_status)(struct mdss_panel_data *pdata);
+	int (*lcd_set_display_inversion)(struct mdss_panel_data *pdata,unsigned int inversion_mode);
+#endif
 };
 
 struct mdss_panel_debugfs_info {

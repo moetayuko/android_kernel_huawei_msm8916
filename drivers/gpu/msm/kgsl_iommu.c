@@ -1719,7 +1719,13 @@ struct scatterlist *_create_sg_no_large_pages(struct kgsl_memdesc *memdesc)
 
 	for_each_sg(memdesc->sg, s, memdesc->sglen, i) {
 		if (SZ_1M <= s->length)
-			sglen_alloc += s->length >> 16;
+		{
+			int aligned_length = ALIGN(s->length, SZ_64K);
+			pr_err("[%s] s->length : %x, aligned_length : %x\n", __func__, s->length, aligned_length);
+			//sglen_alloc += s->length >> 16;
+			sglen_alloc += aligned_length >> 16;
+
+		}
 		else
 			sglen_alloc++;
 	}

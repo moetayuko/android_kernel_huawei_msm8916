@@ -95,7 +95,12 @@ module_param(lpm_disconnect_thresh , uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(lpm_disconnect_thresh,
 	"Delay before entering LPM on USB disconnect");
 
+#ifdef CONFIG_HUAWEI_KERNEL
+static bool floated_charger_enable = true;
+#include <linux/power/huawei_charger.h>
+#else
 static bool floated_charger_enable;
+#endif
 module_param(floated_charger_enable , bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(floated_charger_enable,
 	"Whether to enable floated charger");
@@ -129,11 +134,19 @@ static inline bool aca_enabled(void)
 #endif
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+extern int get_android_usb_none_mode(void);
+#endif
+/*Remove unuse code*/
+
 static int vdd_val[VDD_VAL_MAX];
 static u32 bus_freqs[USB_NUM_BUS_CLOCKS];	/* bimc, snoc, pcnoc clk */;
 static char bus_clkname[USB_NUM_BUS_CLOCKS][20] = {"bimc_clk", "snoc_clk",
 						"pcnoc_clk"};
 static bool bus_clk_rate_set;
+#ifdef CONFIG_HUAWEI_PMU_DSM
+#include <linux/power/huawei_dsm_charger.h>
+#endif
 
 static void
 msm_otg_dbg_log_event(struct usb_phy *phy, char *event, int d1, int d2)
@@ -693,6 +706,9 @@ static int msm_otg_reset(struct usb_phy *phy)
 		dev_info(phy->dev, "performing USB h/w reset for recovery\n");
 		motg->err_event_seen = false;
 	} else if (pdata->disable_reset_on_disconnect && motg->reset_counter) {
+	dev_info(phy->dev, "disable_reset_on_disconnect=%d,reset_counter=%d\n",
+        pdata->disable_reset_on_disconnect,
+        motg->reset_counter);
 		return 0;
 	}
 	motg->reset_counter++;
@@ -1850,13 +1866,28 @@ static void msm_otg_notify_host_mode(struct msm_otg *motg, bool host_mode)
 static int msm_otg_notify_chg_type(struct msm_otg *motg)
 {
 	static int charger_type;
+#ifdef CONFIG_HUAWEI_KERNEL
+	static int chg_type = -1;
+#endif
 
 	/*
 	 * TODO
 	 * Unify OTG driver charger types and power supply charger types
 	 */
+	/* should use the same type to compare */
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (chg_type == motg->chg_type)
+	{
+		return 0;
+	}
+	else
+	{
+		chg_type = motg->chg_type;
+	}
+#else
 	if (charger_type == motg->chg_type)
 		return 0;
+#endif
 
 	if (motg->chg_type == USB_SDP_CHARGER)
 		charger_type = POWER_SUPPLY_TYPE_USB;
@@ -2126,7 +2157,7 @@ static void msm_hsusb_vbus_power(struct msm_otg *motg, bool on)
 	}
 
 	if (!vbus_otg) {
-		pr_err("vbus_otg is NULL.");
+		/*remove unused code */
 		return;
 	}
 
@@ -2900,7 +2931,11 @@ static const char *chg_to_string(enum usb_chg_type chg_type)
 	}
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#define MSM_CHG_DCD_TIMEOUT     (3000 * HZ/1000) /* 3000 msec */
+#else
 #define MSM_CHG_DCD_TIMEOUT		(750 * HZ/1000) /* 750 msec */
+#endif
 #define MSM_CHG_DCD_POLL_TIME		(50 * HZ/1000) /* 50 msec */
 #define MSM_CHG_PRIMARY_DET_TIME	(50 * HZ/1000) /* TVDPSRC_ON */
 #define MSM_CHG_SECONDARY_DET_TIME	(50 * HZ/1000) /* TVDMSRC_ON */
@@ -3045,7 +3080,7 @@ static void msm_chg_detect_work(struct work_struct *w)
 		if (motg->chg_type == USB_DCP_CHARGER)
 			ulpi_write(phy, 0x2, 0x85);
 
-		dev_dbg(phy->dev, "chg_type = %s\n",
+		dev_info(phy->dev, "chg_type = %s\n",
 			chg_to_string(motg->chg_type));
 		msm_otg_dbg_log_event(phy, "CHG WORK: CHG_TYPE",
 				motg->chg_type, motg->inputs);
@@ -3222,7 +3257,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 		pm_runtime_get_sync(otg->phy->dev);
 		motg->pm_done = 0;
 	}
-	pr_debug("%s work\n", usb_otg_state_string(otg->phy->state));
+	pr_info("%s work\n", usb_otg_state_string(otg->phy->state));
 	msm_otg_dbg_log_event(&motg->phy, "SM WORK:",
 			otg->phy->state, motg->inputs);
 	switch (otg->phy->state) {
@@ -3268,7 +3303,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 			otg->phy->state = OTG_STATE_A_IDLE;
 			work = 1;
 		} else if (test_bit(B_SESS_VLD, &motg->inputs)) {
-			pr_debug("b_sess_vld\n");
+			pr_info("b_sess_vld\n");
 			msm_otg_dbg_log_event(&motg->phy, "B_SESS_VLD",
 					motg->inputs, otg->phy->state);
 			switch (motg->chg_state) {
@@ -3289,8 +3324,20 @@ static void msm_otg_sm_work(struct work_struct *w)
 					pm_runtime_put_sync(otg->phy->dev);
 					break;
 				case USB_FLOATED_CHARGER:
+#ifdef CONFIG_HUAWEI_KERNEL
+					msm_otg_notify_charger(motg,
+							IDEV_CHG_MIN);
+					pr_info("none standard charger deteted\n");
+#ifdef CONFIG_HUAWEI_PMU_DSM
+					/* if none standard charger deteted, record this log, and notify to the dsm server*/
+					DSM_PMU_LOG(charger_dclient, DSM_NONSTANDARD_CHARGER_DETETED,
+						"none standard charger deteted\n");
+#endif
+#else
 					msm_otg_notify_charger(motg,
 							IDEV_CHG_MAX);
+#endif
+
 					msm_otg_dbg_log_event(&motg->phy,
 					"PM RUNTIME: FLCHG PUT",
 					get_pm_runtime_counter(otg->phy->dev),
@@ -3321,6 +3368,10 @@ static void msm_otg_sm_work(struct work_struct *w)
 						OTG_STATE_B_PERIPHERAL;
 					break;
 				case USB_SDP_CHARGER:
+#ifdef CONFIG_HUAWEI_KERNEL
+					/* set current as soon as chg type detected */
+					msm_otg_notify_charger(motg, IDEV_CHG_MIN);
+#endif
 					msm_otg_start_peripheral(otg, 1);
 					otg->phy->state =
 						OTG_STATE_B_PERIPHERAL;
@@ -4175,7 +4226,7 @@ static void msm_otg_set_vbus_state(int online)
 			goto out;
 		}
 		complete(&pmic_vbus_init);
-		pr_debug("PMIC: BSV init complete\n");
+		pr_info("PMIC: BSV init complete\n");
 		msm_otg_dbg_log_event(&motg->phy, "PMIC: BSV INIT COMPLETE",
 				init, motg->inputs);
 		return;
@@ -4554,6 +4605,18 @@ otg_get_prop_usbin_voltage_now(struct msm_otg *motg)
 	}
 }
 
+#ifdef CONFIG_HUAWEI_KERNEL
+int is_vbus_otg_regulator_enabled(void)
+{
+	if (!vbus_otg) {
+		/*remove unused code */
+		return 0;
+	}
+
+	return regulator_is_enabled(vbus_otg);
+}
+EXPORT_SYMBOL(is_vbus_otg_regulator_enabled);
+#endif
 static int otg_power_get_property_usb(struct power_supply *psy,
 				  enum power_supply_property psp,
 				  union power_supply_propval *val)
@@ -4578,6 +4641,12 @@ static int otg_power_get_property_usb(struct power_supply *psy,
 	/* Reflect USB enumeration */
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = motg->online;
+#ifdef CONFIG_HUAWEI_KERNEL
+		if ((1 == is_usb_chg_exist()) 
+		&& (!is_vbus_otg_regulator_enabled())) {
+			val->intval = 1;
+		}
+#endif
 		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = psy->type;
@@ -4638,6 +4707,12 @@ static int otg_power_set_property_usb(struct power_supply *psy,
 			motg->chg_type = USB_SDP_CHARGER;
 			break;
 		case POWER_SUPPLY_TYPE_USB_DCP:
+#ifdef CONFIG_HUAWEI_KERNEL
+			/* avoid regarding floated charger as dcp to set too large usb current */
+			if (USB_FLOATED_CHARGER == motg->chg_type) {
+				break;
+			}
+#endif
 			motg->chg_type = USB_DCP_CHARGER;
 			break;
 		case POWER_SUPPLY_TYPE_USB_CDP:
@@ -4689,6 +4764,7 @@ static int otg_power_property_is_writeable_usb(struct power_supply *psy,
 
 static char *otg_pm_power_supplied_to[] = {
 	"battery",
+/*Remove unuse code*/
 };
 
 static enum power_supply_property otg_pm_power_props_usb[] = {

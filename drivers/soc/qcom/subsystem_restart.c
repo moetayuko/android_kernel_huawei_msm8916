@@ -309,7 +309,12 @@ static struct bus_type subsys_bus_type = {
 
 static DEFINE_IDA(subsys_ida);
 
+#ifdef CONFIG_HUAWEI_KERNEL
+int enable_ramdumps;
+int subsystem_restart_requested = 0;
+#else
 static int enable_ramdumps;
+#endif
 module_param(enable_ramdumps, int, S_IRUGO | S_IWUSR);
 
 struct workqueue_struct *ssr_wq;
@@ -544,7 +549,11 @@ static void subsystem_ramdump(struct subsys_device *dev, void *data)
 {
 	const char *name = dev->desc->name;
 
+    #ifdef CONFIG_HUAWEI_KERNEL
+    if (dev->desc->ramdump && enable_ramdumps)
+    #else
 	if (dev->desc->ramdump)
+    #endif
 		if (dev->desc->ramdump(is_ramdump_enabled(dev), dev->desc) < 0)
 			pr_warn("%s[%p]: Ramdump failed.\n", name, current);
 	dev->do_ramdump_on_put = false;
@@ -766,6 +775,9 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	struct subsys_tracking *track;
 	unsigned count;
 	unsigned long flags;
+#ifdef CONFIG_HUAWEI_KERNEL
+	int enable_ramdumps_old = 0;
+#endif
 
 	/*
 	 * It's OK to not take the registration lock at this point.
@@ -794,6 +806,15 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 
 	pr_debug("[%p]: Starting restart sequence for %s\n", current,
 			desc->name);
+
+#ifdef CONFIG_HUAWEI_KERNEL
+	/* disable subsystem ramdump if subsystem restart is requested */
+	if (subsystem_restart_requested) {
+		enable_ramdumps_old = enable_ramdumps;
+		enable_ramdumps = 0;
+	}
+#endif
+
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_SHUTDOWN, NULL);
 	for_each_subsys_device(list, count, NULL, subsystem_shutdown);
 	notify_each_subsys_device(list, count, SUBSYS_AFTER_SHUTDOWN, NULL);
@@ -811,6 +832,14 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_POWERUP, NULL);
 	for_each_subsys_device(list, count, NULL, subsystem_powerup);
 	notify_each_subsys_device(list, count, SUBSYS_AFTER_POWERUP, NULL);
+
+#ifdef CONFIG_HUAWEI_KERNEL
+	/* restore subsystem ramdump switch */
+	if (subsystem_restart_requested) {
+		enable_ramdumps = enable_ramdumps_old;
+		subsystem_restart_requested = 0;
+	}
+#endif
 
 	pr_info("[%p]: Restart sequence for %s completed.\n",
 			current, desc->name);
@@ -904,6 +933,13 @@ int subsystem_restart_dev(struct subsys_device *dev)
 		__subsystem_restart_dev(dev);
 		break;
 	case RESET_SOC:
+#ifdef CONFIG_HUAWEI_KERNEL
+                if(subsystem_restart_requested ==1){
+                   __subsystem_restart_dev(dev);
+                   pr_info("subsys-restart: huawei restart request,so couldn't reboot!!");
+                   break;
+                }
+#endif
 		__pm_stay_awake(&dev->ssr_wlock);
 		schedule_work(&dev->device_restart_work);
 		return 0;

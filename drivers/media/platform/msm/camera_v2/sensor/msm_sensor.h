@@ -79,6 +79,9 @@ struct msm_sensor_ctrl_t {
 	struct device_node *of_node;
 	enum msm_camera_stream_type_t camera_stream_type;
 	uint32_t set_mclk_23880000;
+	struct msm_sensor_afc_otp_info afc_otp_info;
+	struct msm_sensor_mmi_otp_flag hw_otp_check_flag;
+	struct msm_sensor_awb_otp_info awb_otp_info;
 };
 
 int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp);

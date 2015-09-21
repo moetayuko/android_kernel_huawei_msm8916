@@ -15,6 +15,14 @@
 #include <linux/mod_devicetable.h>
 #include <linux/notifier.h>
 
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#define EXT_CSD_PRE_EOL_INFO_NORMAL     0x01
+#define EXT_CSD_PRE_EOL_INFO_WARNING     0x02
+#define EXT_CSD_PRE_EOL_INFO_URGENT     0x03
+#endif
+
+#define EMMC_SAMSUNG_MANFID 0x15
+
 struct mmc_cid {
 	unsigned int		manfid;
 	char			prod_name[8];
@@ -107,6 +115,11 @@ struct mmc_ext_csd {
 	u8			raw_trim_mult;		/* 232 */
 	u8			raw_bkops_status;	/* 246 */
 	u8			raw_sectors[4];		/* 212 - 4 bytes */
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	u8			pre_eol_info;	/* 267 */
+	u8			device_life_time_est_typ_a;	/* 268 */
+	u8			device_life_time_est_typ_b;	/* 269 */
+#endif
 
 	unsigned int            feature_support;
 #define MMC_DISCARD_FEATURE	BIT(0)                  /* CMD38 feature */
@@ -386,6 +399,9 @@ struct mmc_card {
 	unsigned int		sd_bus_speed;	/* Bus Speed Mode set for the card */
 
 	struct dentry		*debugfs_root;
+#ifdef CONFIG_HUAWEI_KERNEL
+	struct dentry          *debugfs_sdxc;
+#endif
 	struct mmc_part	part[MMC_NUM_PHY_PARTITION]; /* physical partitions */
 	unsigned int    nr_parts;
 	unsigned int	part_curr;
@@ -451,7 +467,11 @@ struct mmc_fixup {
 
 #define EXT_CSD_REV_ANY (-1u)
 
+#ifdef CONFIG_HUAWEI_KERNEL
+#define CID_MANFID_SANDISK	0x45
+#else
 #define CID_MANFID_SANDISK	0x2
+#endif
 #define CID_MANFID_TOSHIBA	0x11
 #define CID_MANFID_MICRON	0x13
 #define CID_MANFID_SAMSUNG	0x15

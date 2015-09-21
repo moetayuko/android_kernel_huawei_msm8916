@@ -28,7 +28,11 @@
 #include "mdss_panel.h"
 #include "mdss_dsi.h"
 #include "mdss_debug.h"
-
+#ifdef CONFIG_HUAWEI_LCD
+#include <linux/hw_lcd_common.h>
+extern int get_offline_cpu(void);
+extern unsigned int cpufreq_get(unsigned int cpu);
+#endif
 #define XO_CLK_RATE	19200000
 
 static int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
@@ -458,7 +462,9 @@ static int mdss_dsi_off(struct mdss_panel_data *pdata, int power_state)
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
 	}
-
+#ifdef CONFIG_HUAWEI_DSM
+	lcd_pwr_status.panel_power_on = 0;
+#endif
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
@@ -543,6 +549,9 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	int cur_power_state;
 
+#ifdef CONFIG_HUAWEI_LCD
+	unsigned long timeout = jiffies;
+#endif
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
@@ -590,6 +599,11 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_LINK_CLKS, 1);
 	mdss_dsi_sw_reset(ctrl_pdata, true);
 
+/* add for timeout print log */
+#ifdef CONFIG_HUAWEI_LCD
+	LCD_LOG_INFO("%s: dsi_on_time = %u,offlinecpu = %d,curfreq = %d\n",
+			__func__,jiffies_to_msecs(jiffies-timeout),get_offline_cpu(),cpufreq_get(0));
+#endif
 	/*
 	 * Issue hardware reset line after enabling the DSI clocks and data
 	 * data lanes for LP11 init
@@ -599,7 +613,9 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 			pr_debug("reset enable: pinctrl not enabled\n");
 		mdss_dsi_panel_reset(pdata, 1);
 	}
-
+#ifdef CONFIG_HUAWEI_DSM
+	lcd_pwr_status.panel_power_on = 1;
+#endif
 	if (mipi->init_delay)
 		usleep(mipi->init_delay);
 
@@ -1417,6 +1433,13 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 	const char *ctrl_name;
 	bool cmd_cfg_cont_splash = true;
 	struct mdss_panel_cfg *pan_cfg = NULL;
+#ifdef CONFIG_HUAWEI_DSM
+	struct dsm_dev dsm_lcd = {
+		.name = "dsm_lcd",
+		.fops = NULL,
+		.buff_size = 1024,
+	};
+#endif
 	struct mdss_util_intf *util;
 
 	util = mdss_get_util_intf();
@@ -1541,6 +1564,11 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		goto error_pan_node;
 	}
 
+#ifdef CONFIG_HUAWEI_DSM
+	if (!lcd_dclient) {
+		lcd_dclient = dsm_register_client(&dsm_lcd);
+	}
+#endif
 	if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
 		rc = devm_request_irq(&pdev->dev,
 			gpio_to_irq(ctrl_pdata->disp_te_gpio),
@@ -1831,7 +1859,6 @@ int dsi_panel_device_register(struct device_node *pan_node,
 	if (!gpio_is_valid(ctrl_pdata->rst_gpio))
 		pr_err("%s:%d, reset gpio not specified\n",
 						__func__, __LINE__);
-
 	if (pinfo->mode_gpio_state != MODE_GPIO_NOT_VALID) {
 
 		ctrl_pdata->mode_gpio = of_get_named_gpio(
@@ -1940,6 +1967,9 @@ int dsi_panel_device_register(struct device_node *pan_node,
 		}
 		if (ctrl_pdata->bklt_ctrl == BL_PWM)
 			ctrl_pdata->pwm_enabled = 1;
+#ifdef CONFIG_HUAWEI_DSM
+		lcd_pwr_status.panel_power_on = 1;
+#endif
 		pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
 		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 		ctrl_pdata->ctrl_state |=

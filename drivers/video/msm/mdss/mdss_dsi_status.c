@@ -29,10 +29,12 @@
 #include "mdss_dsi.h"
 #include "mdss_panel.h"
 #include "mdss_mdp.h"
-
+#ifdef CONFIG_HUAWEI_LCD
+#include "mdp3_ctrl.h"
+#endif
 #define STATUS_CHECK_INTERVAL_MS 5000
 #define STATUS_CHECK_INTERVAL_MIN_MS 50
-#define DSI_STATUS_CHECK_INIT -1
+#define DSI_STATUS_CHECK_INIT 0
 #define DSI_STATUS_CHECK_DISABLE 1
 
 static uint32_t interval = STATUS_CHECK_INTERVAL_MS;
@@ -44,6 +46,78 @@ struct dsi_status_data *pstatus_data;
  * calls platform specific DSI ctrl Status function.
  * @work  : dsi controller status data
  */
+#ifdef CONFIG_HUAWEI_LCD
+static void check_dsi_ctrl_status(struct work_struct *work)
+{
+	struct dsi_status_data *pdsi_status = NULL;
+	struct mdss_panel_data *pdata = NULL;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mdp3_session_data *mdp3_session = NULL;
+	int ret = 0;
+
+	pdsi_status = container_of(to_delayed_work(work),
+		struct dsi_status_data, check_status);
+
+	if (!pdsi_status || !(pdsi_status->mfd)) {
+		pr_err("%s: mfd not available\n", __func__);
+		return;
+	}
+
+	pdata = dev_get_platdata(&pdsi_status->mfd->pdev->dev);
+	if (!pdata) {
+		pr_err("%s: Panel data not available\n", __func__);
+		return;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+							panel_data);
+
+	if (!ctrl_pdata || !ctrl_pdata->check_status) {
+		pr_err("%s: DSI ctrl or status_check callback not available\n",
+								__func__);
+		return;
+	}
+
+	if (mdss_panel_is_power_off(pdsi_status->mfd->panel_power_state) ||
+			pdsi_status->mfd->shutdown_pending) {
+		pr_err("%s: panel off\n", __func__);
+		return;
+	}
+
+	mdp3_session = pdsi_status->mfd->mdp.private1;
+	if (!mdp3_session) {
+		pr_err("%s: Display is off\n", __func__);
+		return;
+	}
+	if (!mdp3_session->status) {
+		pr_debug("%s: display off already\n", __func__);
+		return;
+	}
+
+	if (mdp3_session->wait_for_dma_done)
+		ret = mdp3_session->wait_for_dma_done(mdp3_session);
+
+	if (!ret)
+		ret = ctrl_pdata->check_status(ctrl_pdata);
+	else
+		pr_err("%s: wait_for_dma_done error\n", __func__);
+
+	if (mdss_fb_is_power_on_interactive(pdsi_status->mfd)) {
+		if (ret > 0) {
+			schedule_delayed_work(&pdsi_status->check_status,
+						msecs_to_jiffies(interval));
+		} else {
+			char *envp[2] = {"PANEL_ALIVE=0", NULL};
+			pdata->panel_info.panel_dead = true;
+			ret = kobject_uevent_env(
+					&pdsi_status->mfd->fbi->dev->kobj,
+					KOBJ_CHANGE, envp);
+			pr_err("%s: Panel has gone bad, sending uevent - %s\n",
+							__func__, envp[0]);
+		}
+	}
+}
+#else
 static void check_dsi_ctrl_status(struct work_struct *work)
 {
 	struct dsi_status_data *pdsi_status = NULL;
@@ -69,6 +143,7 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 
 	pdsi_status->mfd->mdp.check_dsi_status(work, interval);
 }
+#endif
 
 /*
  * hw_vsync_handler() - Interrupt handler for HW VSYNC signal.
@@ -100,6 +175,59 @@ irqreturn_t hw_vsync_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_HUAWEI_LCD
+void mdss_dsi_status_check_ctl(struct msm_fb_data_type *mfd, int sheduled)
+{
+	struct mdss_panel_data *pdata = NULL;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+
+	if(!mfd)
+	{
+		pr_err("%s: mfd not available\n", __func__);
+		return ;
+	}
+
+	if(!pstatus_data)
+	{
+		pr_err("%s: pstatus_data not available\n", __func__);
+		return ;
+	}
+
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+	if (!pdata) {
+		pr_err("%s: Panel data not available\n", __func__);
+		return;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+							panel_data);
+
+	/*if panel not enable esd check switch in dtsi,we do not check bta*/
+	if(!ctrl_pdata->esd_check_enable)
+	{
+		pr_debug("%s: ctrl_pdata->esd_check_enable = %d,don't need check esd!\n", __func__,(int)ctrl_pdata->esd_check_enable);
+		return;
+	}
+	if (dsi_status_disable) {
+		pr_info("%s: DSI status disabled\n", __func__);
+		return;
+	}
+
+	pr_debug("%s:scheduled=%d\n",__func__,sheduled);
+
+	pstatus_data->mfd = mfd;
+
+	if(sheduled) 
+	{
+		schedule_delayed_work(&pstatus_data->check_status,
+			msecs_to_jiffies(interval));
+	}
+	else
+	{
+		cancel_delayed_work_sync(&pstatus_data->check_status);
+	}
+}
+#else
 /*
  * fb_event_callback() - Call back function for the fb_register_client()
  *			 notifying events
@@ -169,7 +297,7 @@ static int fb_event_callback(struct notifier_block *self,
 	}
 	return 0;
 }
-
+#endif
 static int param_dsi_status_disable(const char *val, struct kernel_param *kp)
 {
 	int ret = 0;
@@ -215,6 +343,7 @@ int __init mdss_dsi_status_init(void)
 		return -ENOMEM;
 	}
 
+#ifndef CONFIG_HUAWEI_LCD
 	pstatus_data->fb_notifier.notifier_call = fb_event_callback;
 
 	rc = fb_register_client(&pstatus_data->fb_notifier);
@@ -224,7 +353,7 @@ int __init mdss_dsi_status_init(void)
 		kfree(pstatus_data);
 		return -EPERM;
 	}
-
+#endif
 	pr_info("%s: DSI status check interval:%d\n", __func__,	interval);
 
 	INIT_DELAYED_WORK(&pstatus_data->check_status, check_dsi_ctrl_status);
@@ -236,7 +365,9 @@ int __init mdss_dsi_status_init(void)
 
 void __exit mdss_dsi_status_exit(void)
 {
+#ifndef CONFIG_HUAWEI_LCD
 	fb_unregister_client(&pstatus_data->fb_notifier);
+#endif
 	cancel_delayed_work_sync(&pstatus_data->check_status);
 	kfree(pstatus_data);
 	pr_debug("%s: DSI ctrl status work queue removed\n", __func__);

@@ -25,7 +25,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	struct sysinfo i;
 	unsigned long committed;
 	unsigned long allowed;
-	struct vmalloc_info vmi;
+	struct vmalloc_info vmi, vmif;
 	long cached;
 	unsigned long pages[NR_LRU_LISTS];
 	int lru;
@@ -46,6 +46,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		cached = 0;
 
 	get_vmalloc_info(&vmi);
+	get_vmalloc_info_filtered(&vmif, VM_ALLOC);
 
 	for (lru = LRU_BASE; lru < NR_LRU_LISTS; lru++)
 		pages[lru] = global_page_state(NR_LRU_BASE + lru);
@@ -98,6 +99,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		"Committed_AS:   %8lu kB\n"
 		"VmallocTotal:   %8lu kB\n"
 		"VmallocUsed:    %8lu kB\n"
+		"VmallocFilt:    %8lu kB\n"
 		"VmallocChunk:   %8lu kB\n"
 #ifdef CONFIG_MEMORY_FAILURE
 		"HardwareCorrupted: %5lu kB\n"
@@ -157,6 +159,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		K(committed),
 		(unsigned long)VMALLOC_TOTAL >> 10,
 		vmi.used >> 10,
+		vmif.used >> 10,
 		vmi.largest_chunk >> 10
 #ifdef CONFIG_MEMORY_FAILURE
 		,atomic_long_read(&num_poisoned_pages) << (PAGE_SHIFT - 10)

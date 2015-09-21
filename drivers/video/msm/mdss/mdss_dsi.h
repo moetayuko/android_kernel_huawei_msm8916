@@ -22,6 +22,8 @@
 
 #include "mdss_panel.h"
 #include "mdss_dsi_cmd.h"
+#include <linux/msm_mdp.h>
+
 
 #define MMSS_SERDES_BASE_PHY 0x04f01000 /* mmss (De)Serializer CFG */
 
@@ -329,6 +331,9 @@ struct mdss_dsi_ctrl_pdata {
 	int disp_te_gpio;
 	int rst_gpio;
 	int disp_en_gpio;
+/* add bias enable vsp/vsn flag */
+	int disp_en_gpio_vsp;
+	int disp_en_gpio_vsn;
 	int bklt_en_gpio;
 	int mode_gpio;
 	int bklt_ctrl;	/* backlight ctrl */
@@ -379,6 +384,9 @@ struct mdss_dsi_ctrl_pdata {
 	int mdp_busy;
 	struct mutex mutex;
 	struct mutex cmd_mutex;
+#ifdef CONFIG_HUAWEI_LCD
+	struct mutex put_mutex;
+#endif
 	struct mutex clk_lane_mutex;
 
 	u32 ulps_clamp_ctrl_off;
@@ -404,6 +412,21 @@ struct mdss_dsi_ctrl_pdata {
 	int horizontal_idle_cnt;
 	struct panel_horizontal_idle *line_idle;
 	struct mdss_util_intf *mdss_util;
+#ifdef CONFIG_HUAWEI_LCD
+	u32 long_read_flag;
+	u32 skip_reg_read;
+	char reg_expect_value;
+	u32 reg_expect_count;
+	u32 inversion_state;
+	struct dsi_panel_cmds dsi_panel_cabc_ui_cmds;
+	struct dsi_panel_cmds dsi_panel_cabc_video_cmds;
+	struct dsi_panel_cmds dot_inversion_cmds;
+	struct dsi_panel_cmds column_inversion_cmds;
+	struct dsi_panel_cmds dsi_panel_inverse_on_cmds;
+	struct dsi_panel_cmds dsi_panel_inverse_off_cmds;
+	u32 esd_check_enable;
+	struct dsi_panel_cmds esd_cmds;
+#endif
 };
 
 struct dsi_status_data {
@@ -607,5 +630,7 @@ static inline bool mdss_dsi_ulps_feature_enabled(
 {
 	return pdata->panel_info.ulps_feature_enabled;
 }
-
+#ifdef CONFIG_HUAWEI_LCD
+int panel_check_live_status(struct mdss_dsi_ctrl_pdata *ctrl);
+#endif
 #endif /* MDSS_DSI_H */

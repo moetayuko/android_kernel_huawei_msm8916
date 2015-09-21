@@ -38,6 +38,7 @@
 #include "msm-pcm-q6-v2.h"
 #include "msm-pcm-routing-v2.h"
 
+
 enum stream_state {
 	IDLE = 0,
 	STOPPED,
@@ -318,6 +319,9 @@ static int msm_pcm_playback_prepare(struct snd_pcm_substream *substream)
 		pr_err("%s: q6asm_open_write_v2 failed\n", __func__);
 		q6asm_audio_client_free(prtd->audio_client);
 		prtd->audio_client = NULL;
+#ifdef CONFIG_HUAWEI_KERNEL_DEBUG
+		panic("@@q6asm_open_write_v2 failed@@");
+#endif
 		return -ENOMEM;
 	}
 

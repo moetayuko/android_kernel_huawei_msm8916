@@ -56,6 +56,10 @@
 #define _ZONE ZONE_NORMAL
 #endif
 
+#ifdef CONFIG_HUAWEI_KSTATE
+#include <linux/hw_kcollect.h>
+#endif
+
 static uint32_t lowmem_debug_level = 1;
 static short lowmem_adj[6] = {
 	0,
@@ -72,6 +76,9 @@ static int lowmem_minfree[6] = {
 };
 static int lowmem_minfree_size = 4;
 static int lmk_fast_run = 1;
+
+static ulong lowmem_kill_count = 0;
+static ulong lowmem_free_mem = 0;
 
 static unsigned long lowmem_deathpending_timeout;
 
@@ -521,6 +528,12 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		}
 
 		lowmem_deathpending_timeout = jiffies + HZ;
+		lowmem_kill_count++;
+		lowmem_free_mem += selected_tasksize * (long)(PAGE_SIZE / 1024) / 1024;
+#ifdef CONFIG_HUAWEI_KSTATE
+		kcollect(KCOLLECT_FREEZER_MASK, "[PID %d KILLED][SIG %d]", selected->tgid, SIGKILL);
+#endif
+
 		send_sig(SIGKILL, selected, 0);
 		set_tsk_thread_flag(selected, TIF_MEMDIE);
 		rem -= selected_tasksize;
@@ -649,6 +662,8 @@ module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
 			 S_IRUGO | S_IWUSR);
 module_param_named(debug_level, lowmem_debug_level, uint, S_IRUGO | S_IWUSR);
 module_param_named(lmk_fast_run, lmk_fast_run, int, S_IRUGO | S_IWUSR);
+module_param_named(kill_count, lowmem_kill_count, ulong, S_IRUGO | S_IWUSR);
+module_param_named(free_mem, lowmem_free_mem, ulong, S_IRUGO | S_IWUSR);
 
 module_init(lowmem_init);
 module_exit(lowmem_exit);

@@ -41,6 +41,9 @@
 #include <soc/qcom/scm.h>
 #include <linux/sched/rt.h>
 
+#ifdef CONFIG_HUAWEI_RESET_DETECT
+#include <linux/huawei_reset_detect.h>
+#endif
 #define CREATE_TRACE_POINTS
 #define TRACE_MSM_THERMAL
 #include <trace/trace_thermal.h>
@@ -628,6 +631,13 @@ static struct notifier_block msm_thermal_cpufreq_notifier = {
 	.notifier_call = msm_thermal_cpufreq_callback,
 };
 
+/*add for get the cpu offline  */
+#ifdef CONFIG_HUAWEI_LCD
+int get_offline_cpu(void)
+{
+	return cpus_offlined;
+}
+#endif
 static void update_cpu_freq(int cpu)
 {
 	int ret = 0;
@@ -1863,6 +1873,27 @@ static struct notifier_block msm_thermal_panic_notifier = {
 	.notifier_call = msm_thermal_panic_callback,
 };
 
+#ifdef CONFIG_HUAWEI_PMU_DSM
+/* get thermal_zone2(tsens2) and thermal_zone4(tsen5) temerature*/
+int get_tsens_temp(uint32_t tsensor_id, long *temp)
+{
+	int ret = 0;
+	long *tsen_temp;
+	uint32_t tsen_id;
+
+	tsen_temp = temp;
+	tsen_id = tsensor_id;
+	ret = therm_get_temp(tsen_id, THERM_TSENS_ID, tsen_temp);
+	if (ret) {
+		pr_err("Unable to read temperature for tsen_id:%d. err:%d\n",
+			tsen_id, ret);
+		ret = -EINVAL;
+		return ret;
+	}
+	return ret;
+}
+EXPORT_SYMBOL(get_tsens_temp);
+#endif
 int sensor_mgr_set_threshold(uint32_t zone_id,
 	struct sensor_threshold *threshold)
 {
@@ -2052,6 +2083,9 @@ static void msm_thermal_bite(int tsens_id, long temp)
 
 	pr_err("TSENS:%d reached temperature:%ld. System reset\n",
 		tsens_id, temp);
+#ifdef CONFIG_HUAWEI_RESET_DETECT
+    set_reset_magic(RESET_MAGIC_THERMAL);
+#endif
 	if (!is_scm_armv8()) {
 		scm_call_atomic1(SCM_SVC_BOOT, THERM_SECURE_BITE_CMD, 0);
 	} else {

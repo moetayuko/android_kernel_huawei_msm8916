@@ -23,7 +23,9 @@
 #include "mdss_panel.h"
 #include "mdss_debug.h"
 #include "mdss_mdp_trace.h"
-
+#include <linux/hw_lcd_common.h>
+extern int get_offline_cpu(void);
+extern unsigned int cpufreq_get(unsigned int cpu);
 /* wait for at least 2 vsyncs for lowest refresh rate (24hz) */
 #define VSYNC_TIMEOUT_US 100000
 
@@ -649,7 +651,9 @@ static void mdss_mdp_video_underrun_intr_done(void *arg)
 	trace_mdp_video_underrun_done(ctl->num, ctl->underrun_cnt);
 	pr_debug("display underrun detected for ctl=%d count=%d\n", ctl->num,
 			ctl->underrun_cnt);
-
+#ifdef CONFIG_HUAWEI_DSM
+	mdp_underrun_dsm_report(ctl->num,ctl->underrun_cnt);
+#endif
 	if (ctl->opmode & MDSS_MDP_CTL_OP_PACK_3D_ENABLE)
 		schedule_work(&ctl->recover_work);
 }
@@ -933,6 +937,9 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		INIT_COMPLETION(ctx->vsync_comp);
 	} else {
 		WARN(1, "commit without wait! ctl=%d", ctl->num);
+#ifdef CONFIG_HUAWEI_DSM
+		lcd_report_dsm_err(DSM_LCD_MDSS_VIDEO_DISPLAY_ERROR_NO,ctl->num,0);
+#endif
 	}
 
 	MDSS_XLOG(ctl->num, ctl->underrun_cnt);

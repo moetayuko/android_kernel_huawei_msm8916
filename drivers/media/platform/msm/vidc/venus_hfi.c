@@ -30,6 +30,9 @@
 #include "venus_hfi.h"
 #include "vidc_hfi_io.h"
 #include "msm_vidc_debug.h"
+#ifdef CONFIG_HUAWEI_DSM
+#include "msm_camera_vid_dsm.h"
+#endif
 
 #define FIRMWARE_SIZE			0X00A00000
 #define REG_ADDR_OFFSET_BITMASK	0x000FFFFF
@@ -4148,6 +4151,9 @@ fail_iommu_attach:
 	venus_hfi_disable_unprepare_clks(device);
 fail_enable_clks:
 	venus_hfi_disable_regulators(device);
+	#ifdef CONFIG_HUAWEI_DSM
+	camera_vid_report_dsm_err_vidc(DSM_CAMERA_VIDC_LOAD_FW_FAIL, rc, NULL);
+	#endif
 fail_enable_gdsc:
 	venus_hfi_unvote_buses(device);
 fail_vote_buses:

@@ -47,6 +47,11 @@
 #define SENSOR_TYPE_STEP_COUNTER		19
 #define SENSOR_TYPE_GEOMAGNETIC_ROTATION_VECTOR	20
 
+#define SENSOR_DISABLE 0
+#define SENSOR_ENABLE  1
+#define SENSOR_DTENABLE  2
+#define SENSOR_DTDISABLE  3
+
 enum LIS3DH_AXIS {
 	AXIS_X = 0,
 	AXIS_Y,
@@ -165,4 +170,51 @@ extern int sensors_classdev_register(struct device *parent,
 				 struct sensors_classdev *sensors_cdev);
 extern void sensors_classdev_unregister(struct sensors_classdev *sensors_cdev);
 
+extern bool sensorDT_mode;
+extern int Gsensor_data_count;
+extern int als_data_count;
+extern int ps_data_count;
+extern int compass_data_count;
+
+/*----------------------------------------------------------------*/
+/*This is for speed up boot time*/
+enum input_name {
+	ACC,
+	AKM,
+	GYRO,
+	ALS,
+	PS,
+	HALL,
+	SENSOR_MAX
+};
+/*layout of each devices*/
+typedef enum
+{
+	COMPASS_TOP_GS_TOP			= 0,
+	COMPASS_TOP_GS_BOTTOM		= 1,
+	COMPASS_BOTTOM_GS_TOP		= 2,
+	COMPASS_BOTTOM_GS_BOTTOM	= 3,
+	COMPASS_NONE_GS_BOTTOM		= 4,
+	COMPASS_NONE_GS_TOP			= 5,
+	COMPASS_GS_POSITION_MAX,
+}compass_gs_position_type;
+/*DEVICE STATUS*/
+#define DEVICE_SUSPEND  0
+#define DEVICE_RESUME   1
+#define IC_PM_ON   1
+#define IC_PM_OFF  0
+
+typedef enum
+{
+	NONE_SENSOR	= 0,
+	G_SENSOR 	= 0x01,
+	L_SENSOR	= 0x02,
+	P_SENSOR 	= 0X04,
+	M_SENSOR	= 0x08,
+	GY_SENSOR   = 0x10,
+}sensors_list_type;
+
+int set_sensor_input(enum input_name name, const char *input_num);
+void set_sensors_list(int sensor);
+/*----------------------------------------------------------------*/
 #endif		/* __LINUX_SENSORS_H_INCLUDED */

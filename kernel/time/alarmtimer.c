@@ -54,6 +54,9 @@ static struct rtc_device	*rtcdev;
 static DEFINE_SPINLOCK(rtcdev_lock);
 static unsigned long power_on_alarm;
 static struct mutex power_on_alarm_lock;
+#ifdef CONFIG_HUAWEI_KERNEL
+#define ALARM_DELTA 60
+#endif
 
 void set_power_on_alarm(long secs, bool enable)
 {
@@ -83,8 +86,11 @@ void set_power_on_alarm(long secs, bool enable)
 	getnstimeofday(&wall_time);
 	rtc_tm_to_time(&rtc_time, &rtc_secs);
 	alarm_delta = wall_time.tv_sec - rtc_secs;
+	#ifdef CONFIG_HUAWEI_KERNEL
+	alarm_time = power_on_alarm - alarm_delta - ALARM_DELTA;
+	#else
 	alarm_time = power_on_alarm - alarm_delta;
-
+	#endif
 	/*
 	 *Substract ALARM_DELTA from actual alarm time
 	 *to power up the device before actual alarm

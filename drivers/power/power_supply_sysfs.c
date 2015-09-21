@@ -145,8 +145,15 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(online),
 	POWER_SUPPLY_ATTR(authentic),
 	POWER_SUPPLY_ATTR(charging_enabled),
+#ifdef CONFIG_HUAWEI_KERNEL
+	POWER_SUPPLY_ATTR(factory_diag),
+	POWER_SUPPLY_ATTR(hot_current_limit),
+#endif
 	POWER_SUPPLY_ATTR(technology),
 	POWER_SUPPLY_ATTR(cycle_count),
+#ifdef CONFIG_HUAWEI_KERNEL
+     POWER_SUPPLY_ATTR(bms_log),
+#endif
 	POWER_SUPPLY_ATTR(voltage_max),
 	POWER_SUPPLY_ATTR(voltage_min),
 	POWER_SUPPLY_ATTR(voltage_max_design),
@@ -205,6 +212,9 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(type),
 	POWER_SUPPLY_ATTR(scope),
 	POWER_SUPPLY_ATTR(system_temp_level),
+#ifdef CONFIG_HUAWEI_KERNEL
+	POWER_SUPPLY_ATTR(running_test_status),
+#endif
 	POWER_SUPPLY_ATTR(resistance),
 	POWER_SUPPLY_ATTR(resistance_capacitive),
 	POWER_SUPPLY_ATTR(resistance_id),
@@ -213,6 +223,9 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(usb_hc),
 	POWER_SUPPLY_ATTR(usb_otg),
 	POWER_SUPPLY_ATTR(charge_enabled),
+#ifdef CONFIG_HUAWEI_KERNEL
+	POWER_SUPPLY_ATTR(resume_charging),
+#endif
 	POWER_SUPPLY_ATTR(flash_current_max),
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_ATTR(charge_counter_ext),
@@ -221,6 +234,9 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(manufacturer),
 	POWER_SUPPLY_ATTR(serial_number),
 	POWER_SUPPLY_ATTR(battery_type),
+#ifdef CONFIG_HUAWEI_KERNEL
+	POWER_SUPPLY_ATTR(charge_log),
+#endif
 };
 
 static struct attribute *

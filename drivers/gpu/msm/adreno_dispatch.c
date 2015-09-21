@@ -468,7 +468,46 @@ static void  dispatcher_queue_context(struct adreno_device *adreno_dev,
 
 	spin_unlock(&dispatcher->plist_lock);
 }
+static void _expire_markers(struct adreno_context *drawctxt)
+{
+	struct kgsl_cmdbatch *cmdbatch = NULL;
+	bool pending = false;
 
+	if (drawctxt->cmdqueue_head == drawctxt->cmdqueue_tail)
+		return;
+
+	cmdbatch = drawctxt->cmdqueue[drawctxt->cmdqueue_head];
+
+	/* Check to see if this is a marker we can skip over */
+	if (cmdbatch->flags & KGSL_CMDBATCH_MARKER) {
+		if (_marker_expired(cmdbatch)) {
+			_pop_cmdbatch(drawctxt);
+			_retire_marker(cmdbatch);
+			_expire_markers(drawctxt);
+		}
+		return;
+	}
+
+	if (cmdbatch->flags & KGSL_CMDBATCH_SYNC) {
+		spin_lock_bh(&cmdbatch->lock);
+		if (!list_empty(&cmdbatch->synclist))
+			pending = true;
+		spin_unlock_bh(&cmdbatch->lock);
+
+		if (!pending) {
+			_pop_cmdbatch(drawctxt);
+			kgsl_cmdbatch_destroy(cmdbatch);
+			_expire_markers(drawctxt);
+		}
+	}
+}
+
+static void expire_markers(struct adreno_context *drawctxt)
+{
+	spin_lock(&drawctxt->lock);
+	_expire_markers(drawctxt);
+	spin_unlock(&drawctxt->lock);
+}
 /**
  * sendcmd() - Send a command batch to the GPU hardware
  * @dispatcher: Pointer to the adreno dispatcher struct
@@ -607,8 +646,10 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 	int inflight = _cmdqueue_inflight(dispatch_q);
 	unsigned int timestamp;
 
-	if (dispatch_q->inflight >= inflight)
+	if (dispatch_q->inflight >= inflight) {
+		expire_markers(drawctxt);
 		return -EBUSY;
+	}
 
 	/*
 	 * Each context can send a specific number of command batches per cycle
@@ -659,6 +700,7 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 		 * conditions improve
 		 */
 		if (ret) {
+			expire_markers(drawctxt);
 			if (adreno_dispatcher_requeue_cmdbatch(drawctxt,
 				cmdbatch))
 				ret = -EINVAL;

@@ -44,7 +44,11 @@ enum msm_bus_perf_setting {
 struct msm_camera_slave_info {
 	uint16_t sensor_slave_addr;
 	uint16_t sensor_id_reg_addr;
+        enum msm_camera_i2c_data_type sensor_id_data_type;
 	uint16_t sensor_id;
+	struct dump_reg_info_t *dump_reg_info;
+	uint16_t dump_reg_num;
+	uint8_t mcam_id;
 };
 
 struct msm_cam_clk_info {

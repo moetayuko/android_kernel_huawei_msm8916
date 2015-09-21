@@ -22,6 +22,10 @@
 #include <linux/spinlock.h>
 #include <linux/syscore_ops.h>
 #include "pinctrl-msm.h"
+#ifdef  CONFIG_HUAWEI_KERNEL
+#include <linux/seq_file.h>
+#include <linux/debugfs.h>
+#endif
 
 /* config translations */
 #define drv_str_to_rval(drv)	((drv >> 1) - 1)
@@ -1154,6 +1158,198 @@ static const struct of_device_id msm_tlmm_dt_match[] = {
 };
 MODULE_DEVICE_TABLE(of, msm_tlmm_dt_match);
 
+#ifdef  CONFIG_HUAWEI_KERNEL
+static const char * const gpiomux_drv_str[] = {
+    "DRV_2mA",
+    "DRV_4mA",
+    "DRV_6mA",
+    "DRV_8mA",
+    "DRV_10mA",
+    "DRV_12mA",
+    "DRV_14mA",
+    "DRV_16mA",
+};
+
+static const char * const gpiomux_func_str[] = {
+    "GPIO",
+    "Func_1",
+    "Func_2",
+    "Func_3",
+    "Func_4",
+    "Func_5",
+    "Func_6",
+    "Func_7",
+    "Func_8",
+    "Func_9",
+    "Func_a",
+    "Func_b",
+    "Func_c",
+    "Func_d",
+    "Func_e",
+    "Func_f",
+};
+
+static const char * const gpiomux_pull_str[] = {
+    "PULL_NONE",
+    "PULL_DOWN",
+    "PULL_KEEPER",
+    "PULL_UP",
+};
+
+static const char * const gpiomux_dir_str[] = {
+    "IN",
+    "OUT",
+};
+
+static const char * const gpiomux_val_str[] = {
+    "LOW",
+    "HIGH",
+};
+
+void msm_gpio_print_enabled(void)
+{
+    int i;
+    unsigned int pull_index, func_index, drv_index, dir_index, val_index;
+    unsigned int cfg_val, inout_val;
+    unsigned int pin_no;
+
+    void __iomem *cfg_reg;
+    void __iomem *inout_reg;
+
+    struct msm_pintype_info *pintype;
+
+    printk(KERN_INFO "GPIO \tFunc \tDir \tPull State \tDrive Strength \tVal\n");
+
+    pintype = &tlmm_pininfo[0];
+
+    if (!pintype)
+        return;
+
+    for (i = 0; i < pintype->num_pins; i++) {
+        pin_no = i + pintype->pin_start;
+
+        cfg_reg = TLMM_GP_CFG(pintype, pin_no);
+        inout_reg = TLMM_GP_INOUT(pintype, pin_no);
+
+        cfg_val = readl_relaxed(cfg_reg);
+        inout_val = readl_relaxed(inout_reg) & BIT(GPIO_IN_BIT);
+        pull_index = (cfg_val >> TLMM_GP_PULL_SHFT) & TLMM_GP_PULL_MASK;
+        func_index = (cfg_val >> TLMM_GP_FUNC_SHFT) & TLMM_GP_FUNC_MASK;
+        drv_index =  (cfg_val >> TLMM_GP_DRV_SHFT) & TLMM_GP_DRV_MASK;
+        dir_index =  (cfg_val >> TLMM_GP_DIR_SHFT) & TLMM_GP_DIR_MASK; //1:out, 0:in
+        val_index = inout_val;
+
+        printk(KERN_INFO "GPIO[%u] \t%s \t%s \t%s \t%s \t%s\n", pin_no,
+            gpiomux_func_str[func_index],
+            func_index?"NA":gpiomux_dir_str[dir_index],
+            gpiomux_pull_str[pull_index],
+            gpiomux_drv_str[drv_index],
+            func_index?"NA":gpiomux_val_str[val_index]);
+    }
+}
+EXPORT_SYMBOL(msm_gpio_print_enabled);
+
+/**
+ * Add new function
+ * hw_gpio_debug: get GPIO status for huawei debug
+ */
+static u32 gpio_check_num = 0;
+
+static int gpio_stats_show(struct seq_file *m, void *unused)
+{
+    unsigned int pull_index, func_index, drv_index, dir_index, val_index;
+    unsigned int cfg_val, inout_val;
+    unsigned int pin_no;
+    int ret = 0;
+
+    void __iomem *cfg_reg;
+    void __iomem *inout_reg;
+
+    struct msm_pintype_info *pintype;
+
+    pintype = &tlmm_pininfo[0];
+
+    if (!pintype)
+        return -ENOMEM;
+
+    if (gpio_check_num > pintype->num_pins) {
+        ret = seq_printf(m, "GPIO Number Error!!!\n");
+        return ret;
+    }
+
+    pin_no = gpio_check_num + pintype->pin_start;
+
+    rcu_read_lock();
+    cfg_reg = TLMM_GP_CFG(pintype, pin_no);
+    inout_reg = TLMM_GP_INOUT(pintype, pin_no);
+    rcu_read_unlock();
+
+    cfg_val = readl_relaxed(cfg_reg);
+    inout_val = readl_relaxed(inout_reg) & BIT(GPIO_IN_BIT);
+    pull_index = (cfg_val >> TLMM_GP_PULL_SHFT) & TLMM_GP_PULL_MASK;
+    func_index = (cfg_val >> TLMM_GP_FUNC_SHFT) & TLMM_GP_FUNC_MASK;
+    drv_index = (cfg_val >> TLMM_GP_DRV_SHFT) & TLMM_GP_DRV_MASK;
+    dir_index = (cfg_val >> TLMM_GP_DIR_SHFT) & TLMM_GP_DIR_MASK;   //1:out, 0:in
+    val_index = inout_val;
+
+    ret = seq_printf(m, "GPIO[%u] \t%s \t%s \t%s \t%s \t%s\n", pin_no,
+                      gpiomux_func_str[func_index],
+                      func_index?"NA":gpiomux_dir_str[dir_index],
+                      gpiomux_pull_str[pull_index],
+                      gpiomux_drv_str[drv_index],
+                      func_index?"NA":gpiomux_val_str[val_index]);
+
+    return ret;
+}
+
+static int gpio_stats_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, gpio_stats_show, NULL);
+}
+
+static const struct file_operations gpio_stats_fops = {
+    .owner = THIS_MODULE,
+    .open = gpio_stats_open,
+    .read = seq_read,
+    .llseek = seq_lseek,
+    .release = single_release,
+};
+
+static void hw_gpio_debug_init(void)
+{
+    struct dentry *dir;
+    struct dentry *file;
+
+    dir = debugfs_create_dir("hw_gpio_debug", NULL);
+    if (!dir) {
+        pr_err("Error creating entry for hw_gpio_debug\n");
+        goto err_create_dir_failed;
+    }
+
+    file = debugfs_create_u32("gpio_num", S_IRUSR | S_IWUSR, dir, &gpio_check_num);
+    if (!file) {
+        pr_err("error creating 'gpio_num' entry\n");
+        goto err_remove_fs;
+    }
+
+    /*add a node which can be write variable sleeplog_en*/
+    file = debugfs_create_file("gpio_stats", S_IRUSR | S_IWUSR,
+                                dir, NULL, &gpio_stats_fops);
+    if (!file) {
+        pr_err("error creating 'gpio_status' entry\n");
+        goto err_remove_fs;
+    }
+
+    return;
+
+err_remove_fs:
+    debugfs_remove_recursive(dir);
+err_create_dir_failed:
+    return;
+}
+
+#endif
+
 static int msm_tlmm_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
@@ -1202,6 +1398,10 @@ static int msm_tlmm_probe(struct platform_device *pdev)
 		tlmm_pininfo[i].pintype_data = pintype_data[i];
 	tlmm_desc->pintypes = tlmm_pininfo;
 	tlmm_desc->num_pintypes = ARRAY_SIZE(tlmm_pininfo);
+#ifdef  CONFIG_HUAWEI_KERNEL
+    hw_gpio_debug_init();
+#endif
+
 	return msm_pinctrl_probe(pdev, tlmm_desc);
 }
 

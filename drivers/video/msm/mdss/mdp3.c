@@ -55,7 +55,11 @@
 #include "mdp3_ctrl.h"
 #include "mdp3_ppp.h"
 #include "mdss_debug.h"
-
+#ifdef CONFIG_HUAWEI_DSM
+#include <linux/hw_lcd_common.h>
+extern int get_offline_cpu(void);
+extern unsigned int cpufreq_get(unsigned int cpu);
+#endif
 #define MISR_POLL_SLEEP                 2000
 #define MISR_POLL_TIMEOUT               32000
 #define MDP3_REG_CAPTURED_DSI_PCLK_MASK 1
@@ -446,6 +450,10 @@ static int mdp3_clk_update(u32 clk_idx, u32 enable)
 		clk_unprepare(clk);
 		ret = 0;
 	} else if (count < 0) {
+/* report mdp clk dsm error */
+#ifdef CONFIG_HUAWEI_DSM
+		lcd_report_dsm_err(DSM_LCD_MDSS_MDP_CLK_ERROR_NO,0,0);
+#endif
 		pr_err("clk=%d count=%d\n", clk_idx, count);
 		ret = -EINVAL;
 	}
@@ -638,6 +646,7 @@ void mdp3_bus_bw_iommu_enable(int enable, int client)
 	}
 
 	if (ref_cnt < 0) {
+		dump_stack();
 		pr_err("Ref count < 0, bus client=%d, ref_cnt=%d",
 				client_idx, ref_cnt);
 	}
@@ -742,6 +751,11 @@ int mdp3_iommu_attach(int context)
 
 	rc = iommu_attach_device(domain_map->domain, context_map->ctx);
 	if (rc) {
+/* report IOMMU dsm error */
+#ifdef CONFIG_HUAWEI_DSM
+		lcd_report_dsm_err(DSM_LCD_MDSS_IOMMU_ERROR_NO,rc,0);
+#endif
+
 		pr_err("mpd3 iommu attach failed\n");
 		return -EINVAL;
 	}
@@ -2172,7 +2186,7 @@ static int mdp3_panel_register_done(struct mdss_panel_data *pdata)
 	 * continue splash screen. This would have happened in
 	 * res_update in continuous_splash_on without this flag.
 	 */
-	if (pdata->panel_info.cont_splash_enabled == false)
+	 if (pdata->panel_info.cont_splash_enabled == false)
 		mdp3_res->allow_iommu_update = true;
 
 	return rc;
@@ -2250,6 +2264,9 @@ static void mdp3_debug_deinit(struct platform_device *pdev)
 static void mdp3_dma_underrun_intr_handler(int type, void *arg)
 {
 	mdp3_res->underrun_cnt++;
+#ifdef CONFIG_HUAWEI_DSM
+	mdp_underrun_dsm_report(0,mdp3_res->underrun_cnt);
+#endif  
 	pr_err("display underrun detected count=%d\n",
 			mdp3_res->underrun_cnt);
 }

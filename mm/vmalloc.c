@@ -274,6 +274,16 @@ LIST_HEAD(vmap_area_list);
 static DEFINE_SPINLOCK(vmap_area_lock);
 static struct rb_root vmap_area_root = RB_ROOT;
 
+#ifdef CONFIG_DUMP_SYS_INFO
+#ifdef CONFIG_MMU
+unsigned long get_vmap_area_lock(void)
+{
+    return (unsigned long)&vmap_area_lock;
+}
+EXPORT_SYMBOL(get_vmap_area_lock);
+#endif
+#endif
+
 /* The vmap cache globals are protected by vmap_area_lock */
 static struct rb_node *free_vmap_cache;
 static unsigned long cached_hole_size;
@@ -1393,6 +1403,10 @@ static void setup_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
 	vm->addr = (void *)va->va_start;
 	vm->size = va->va_end - va->va_start;
 	vm->caller = caller;
+#ifdef CONFIG_DEBUG_VMALLOC
+	vm->pid = current->pid;
+	vm->task_name = current->comm;
+#endif
 	va->vm = vm;
 	va->flags |= VM_VM_AREA;
 	spin_unlock(&vmap_area_lock);
@@ -1718,6 +1732,10 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 	}
 	area->pages = pages;
 	area->caller = caller;
+#ifdef CONFIG_DEBUG_VMALLOC
+	area->pid = current->pid;
+	area->task_name = current->comm;
+#endif
 	if (!area->pages) {
 		remove_vm_area(area->addr);
 		kfree(area);
@@ -2757,7 +2775,13 @@ static int s_show(struct seq_file *m, void *p)
 
 	if (v->flags & VM_LOWMEM)
 		seq_printf(m, " lowmem");
+#ifdef CONFIG_DEBUG_VMALLOC
+	if (v->pid)
+		seq_printf(m, " pid=%d", v->pid);
 
+	if (v->task_name)
+		seq_printf(m, " task name=%s", v->task_name);
+#endif
 	show_numa_info(m, v);
 	seq_putc(m, '\n');
 	return 0;
@@ -2803,7 +2827,7 @@ static int __init proc_vmalloc_init(void)
 }
 module_init(proc_vmalloc_init);
 
-void get_vmalloc_info(struct vmalloc_info *vmi)
+void get_vmalloc_info_filtered(struct vmalloc_info *vmi, unsigned long flags)
 {
 	struct vmap_area *va;
 	unsigned long free_area_size;
@@ -2835,6 +2859,9 @@ void get_vmalloc_info(struct vmalloc_info *vmi)
 		if (va->flags & (VM_LAZY_FREE | VM_LAZY_FREEING))
 			continue;
 
+		if (flags != 0xFFFFFFFFUL && (!(va->flags & VM_VM_AREA) || va->vm->flags != flags))
+			continue; // largest_chunk will be useless when filtering with flags
+
 		vmi->used += (va->va_end - va->va_start);
 
 		free_area_size = addr - prev_end;
@@ -2849,6 +2876,11 @@ void get_vmalloc_info(struct vmalloc_info *vmi)
 
 out:
 	spin_unlock(&vmap_area_lock);
+}
+
+void get_vmalloc_info(struct vmalloc_info *vmi)
+{
+	get_vmalloc_info_filtered(vmi, 0xFFFFFFFFUL);
 }
 #endif
 

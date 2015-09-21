@@ -1,5 +1,5 @@
 ifeq ($(CONFIG_OF),y)
-
+include $(srctree)/arch/arm/boot/dts/qcom/Makefile.board
 dtb-$(CONFIG_ARCH_MSM8974) += msm8974-v1-cdp.dtb \
 	msm8974-v1-fluid.dtb \
 	msm8974-v1-liquid.dtb \
@@ -28,42 +28,6 @@ dtb-$(CONFIG_ARCH_MSM8974) += msm8974-v1-cdp.dtb \
 	msm8974pro-ac-pm8941-liquid.dtb \
 	msm8974pro-ac-pm8941-mtp.dtb \
 	msm8974pro-ac-pma8084-pm8941-mtp.dtb
-dtb-$(CONFIG_ARCH_MSM8909) += msm8909-sim.dtb \
-	msm8909-rumi.dtb \
-	msm8909-qrd-skua.dtb \
-	msm8909-qrd-skuc.dtb \
-	msm8909-qrd-skue.dtb \
-	msm8909-cdp.dtb \
-	msm8909-mtp.dtb \
-	msm8909-mtp-smb1360.dtb \
-	msm8909-pm8916-mtp-smb1360.dtb \
-	msm8909-512mb-mtp-smb1360.dtb \
-	msm8909-1gb-qrd-skua.dtb \
-	msm8909-1gb-qrd-skuc.dtb \
-	msm8909-1gb-qrd-skue.dtb \
-	msm8909-1gb-cdp.dtb \
-	msm8909-1gb-mtp.dtb \
-	msm8909-1gb-rcm.dtb \
-	msm8909-pm8916-1gb-rcm.dtb \
-	msm8909-pm8916-mtp.dtb \
-	msm8909-pm8916-cdp.dtb \
-	msm8909-qhd-cdp.dtb \
-	msm8909-qhd-rcm.dtb \
-	msm8909-pm8916-1gb-qhd-rcm.dtb \
-	msm8909-pm8916-qhd-rcm.dtb \
-	msm8208-cdp.dtb \
-	msm8208-mtp.dtb \
-	msm8208-1gb-cdp.dtb \
-	msm8208-1gb-mtp.dtb \
-	msm8208-qrd-skua.dtb \
-	msm8208-qrd-skuc.dtb \
-	msm8208-qrd-skue.dtb \
-	msm8208-1gb-qrd-skua.dtb \
-	msm8208-1gb-qrd-skuc.dtb \
-	msm8208-1gb-qrd-skue.dtb \
-	msm8208-1gb-rcm.dtb \
-	msm8208-qhd-cdp.dtb \
-	msm8208-qhd-rcm.dtb
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8916-rumi.dtb \
 	msm8916-cdp.dtb \

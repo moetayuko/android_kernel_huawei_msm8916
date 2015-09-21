@@ -537,7 +537,19 @@ config BALANCE_ANON_FILE_RECLAIM
 	  equally.
 	  Swapping anonymous pages out to memory can be efficient enough to justify
 	  treating anonymous and file backed pages equally.
+	 
+config DEBUG_VMALLOC
+	bool "Enable VMALLOC debugging support"
+	help
+	  This enables the inclusion of a few debugging parameters, which
+	  are the PID and the name of the task requesting vmalloc.
 
+	  Disabling these can result in savings in code size.
+config HUAWEI_KERNEL_DEBUG
+	bool "Enable huawei kernel debugging support"
+	help
+	  This enables the function for sysrq.
+	  
 config GENERIC_EARLY_IOREMAP
 	bool
 
