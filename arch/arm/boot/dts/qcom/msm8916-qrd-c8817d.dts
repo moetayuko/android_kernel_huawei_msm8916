@@ -24,10 +24,6 @@
 			<8071 0>, <8071 4>;
 };
 
-&mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_boe_hx8394d_5_720p_video>;
-};
-
 &soc {
 
 	sound {

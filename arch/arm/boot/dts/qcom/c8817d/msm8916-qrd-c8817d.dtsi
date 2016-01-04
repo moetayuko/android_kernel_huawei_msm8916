@@ -10,7 +10,6 @@
  * GNU General Public License for more details.
  */
 
-#include "../dsi-panel-innolux-720p-video.dtsi"
 #include "hw-panel-boe-hx8394d-5-720p-video.dtsi"
 #include "hw-panel-boe-nt35521-5-720p-video.dtsi"
 #include "hw-panel-cmi-otm1283a-5-720p-video.dtsi"
@@ -158,7 +157,7 @@
 };
 
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_innolux_720p_video>;
+	qcom,dsi-pref-prim-pan = <&dsi_boe_hx8394d_5_720p_video>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
 	pinctrl-0 = <&mdss_dsi_active>;
 	pinctrl-1 = <&mdss_dsi_suspend>;
@@ -189,11 +188,6 @@
 			qcom,supply-disable-load = <0>;
 		};
 	};
-};
-
-&dsi_innolux_720p_video {
-	qcom,cont-splash-enabled;
-	qcom,esd-check-enabled;
 };
 
 &soc {
