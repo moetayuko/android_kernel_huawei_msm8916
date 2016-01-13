@@ -30,8 +30,6 @@
 #define CCI_PINCTRL_STATE_DEFAULT "cci_default"
 #define CCI_PINCTRL_STATE_SLEEP "cci_suspend"
 
-#define CCI_NUM_CLK_MAX	16
-
 enum cci_i2c_queue_t {
 	QUEUE_0,
 	QUEUE_1,
@@ -135,7 +133,7 @@ struct cci_device {
 	enum msm_cci_state_t cci_state;
 	uint32_t num_clk;
 
-	struct clk *cci_clk[CCI_NUM_CLK_MAX];
+	struct clk *cci_clk[5];
 	struct msm_camera_cci_i2c_queue_info
 		cci_i2c_queue_info[NUM_MASTERS][NUM_QUEUES];
 	struct msm_camera_cci_master_info cci_master_info[NUM_MASTERS];
@@ -145,8 +143,6 @@ struct cci_device {
 	uint8_t master_clk_init[MASTER_MAX];
 	struct msm_pinctrl_info cci_pinctrl;
 	uint8_t cci_pinctrl_status;
-	struct regulator *reg_ptr;
-	uint32_t cycles_per_us;
 };
 
 enum msm_cci_i2c_cmd_type {
@@ -182,13 +178,7 @@ enum msm_cci_gpio_cmd_type {
 	CCI_GPIO_INVALID_CMD,
 };
 
-#ifdef CONFIG_MSM_CCI
 struct v4l2_subdev *msm_cci_get_subdev(void);
-#else
-static inline struct v4l2_subdev *msm_cci_get_subdev(void) {
-	return NULL;
-}
-#endif
 
 #define VIDIOC_MSM_CCI_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 23, struct msm_camera_cci_ctrl *)
