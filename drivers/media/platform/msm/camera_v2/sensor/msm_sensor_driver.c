@@ -18,6 +18,7 @@
 #include "msm_cci.h"
 #include "msm_camera_dt_util.h"
 #include "sensor_otp_common_if.h"
+#include "misc/app_info.h"
 
 /* Logging macro */
 /*#define MSM_SENSOR_DRIVER_DEBUG*/
@@ -607,6 +608,17 @@ int32_t msm_sensor_driver_probe(void *setting)
 	}
 
 	pr_err("%s probe succeeded", slave_info->sensor_name);
+
+	if (0 == slave_info->camera_id){
+		rc = app_info_set("camera_main", slave_info->sensor_name);
+	}
+	else if (1 == slave_info->camera_id){
+		rc = app_info_set("camera_slave", slave_info->sensor_name);
+	}
+	else{
+		pr_err("%s app_info_set id err", slave_info->sensor_name);
+	}
+
 	/*
 	  Set probe succeeded flag to 1 so that no other camera shall
 	 * probed on this slot
