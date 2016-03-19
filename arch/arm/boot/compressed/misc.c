@@ -21,6 +21,7 @@ unsigned int __machine_arch_type;
 #include <linux/compiler.h>	/* for inline */
 #include <linux/types.h>
 #include <linux/linkage.h>
+/*delete the code of checking log_header_h in kernel*/
 
 static void putstr(const char *ptr);
 extern void error(char *x);
@@ -141,6 +142,7 @@ void __stack_chk_fail(void)
 
 extern int do_decompress(u8 *input, int len, u8 *output, void (*error)(char *x));
 
+/*delete the code of checking log_header_h in kernel*/
 
 void
 decompress_kernel(unsigned long output_start, unsigned long free_mem_ptr_p,
@@ -156,6 +158,8 @@ decompress_kernel(unsigned long output_start, unsigned long free_mem_ptr_p,
 	free_mem_end_ptr	= free_mem_ptr_end_p;
 	__machine_arch_type	= arch_id;
 
+/*delete the code of checking log_header_h in kernel*/
+    
 	arch_decomp_setup();
 
 	putstr("Uncompressing Linux...");

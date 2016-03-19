@@ -1,0 +1,8 @@
+ &usb_otg {  
+       qcom,hsusb-otg-mode = <3>;  
+       vbus_otg-supply = <&bq24296_otg_supply>;
+       qcom,usbid-gpio = <&msm_gpio 110 0>;   
+       pinctrl-names = "default";   
+       pinctrl-0 = <&usbid_default>; 
+};  
+

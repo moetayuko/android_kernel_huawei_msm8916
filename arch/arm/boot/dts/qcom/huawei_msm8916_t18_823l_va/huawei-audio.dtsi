@@ -1,0 +1,45 @@
+/ {
+    huawei_audio_info {
+        compatible = "huawei,hw_audio_info";
+        product-identifier = "t18p0_82xl";
+        builtin-master-mic-exist;
+        hand_held_master_mic_strategy;
+        status = "ok";
+        aud_param_ver = "t18p0_82xl_audio_A01";
+        loud_speaker_master_mic_strategy;
+        product-btsco-nrec-adapt;
+    };
+};
+&soc {
+    sound {
+		qcom,btn-cfg-adapt-enable = "enable";
+		qcom,btn-cfg-values = 
+		/* btn_low[0], btn_high[0], btn_low[1], btn_high[1], btn_low[2], 
+		   btn_high[2],btn_low[3], btn_high[3],btn_low[4], btn_high[4],*/
+		<75 75 212 225 387 400 400 400 400 400>;
+    };
+};
+&spmi_bus {
+        qcom,pm8916@1 {
+            pm8916_tombak_dig: msm8x16_wcd_codec@f000{
+                qcom,msm-boost-voltage = <5000>;
+                msm-pwm-mode;
+        };
+    };
+};
+&soc {
+    sound {
+        qcom,msm-micbias1-ext-cap;
+	qcom,msm-hs-micbias-type = "external";
+	qcom,audio-routing =
+		"RX_BIAS", "MCLK",
+		"SPK_RX_BIAS", "MCLK",
+		"INT_LDO_H", "MCLK",
+		"MIC BIAS External", "Handset Mic",
+		"MIC BIAS External2", "Headset Mic",
+		"MIC BIAS External", "Secondary Mic",
+		"AMIC1", "MIC BIAS External",
+		"AMIC2", "MIC BIAS External2",
+		"AMIC3", "MIC BIAS External";
+    };
+};

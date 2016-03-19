@@ -60,6 +60,10 @@
 
 #include "atags.h"
 
+#ifdef CONFIG_DUMP_SYS_INFO
+#include <linux/module.h>
+#include <linux/srecorder.h>
+#endif
 
 #if defined(CONFIG_FPE_NWFPE) || defined(CONFIG_FPE_FASTFPE)
 char fpe_type[8];
@@ -104,6 +108,13 @@ EXPORT_SYMBOL(boot_reason);
 
 unsigned int cold_boot;
 EXPORT_SYMBOL(cold_boot);
+#ifdef CONFIG_HUAWEI_KERNEL
+#ifndef HIDE_PRODUCT_INFO_KERNEL
+//Define the valuable which declared in processor.h
+unsigned int hide_info;
+EXPORT_SYMBOL(hide_info);
+#endif
+#endif
 
 char* (*arch_read_hardware_id)(void);
 EXPORT_SYMBOL(arch_read_hardware_id);
@@ -152,6 +163,20 @@ static union { char c[4]; unsigned long l; } endian_test __initdata = { { 'l', '
 #define ENDIANNESS ((char)endian_test.l)
 
 DEFINE_PER_CPU(struct cpuinfo_arm, cpu_data);
+
+#ifdef CONFIG_DUMP_SYS_INFO
+unsigned long get_cpu_name(void)
+{
+    return (unsigned long)&cpu_name;
+}
+EXPORT_SYMBOL(get_cpu_name);
+
+unsigned long get_machine_name(void)
+{
+    return (unsigned long)&machine_name;
+}
+EXPORT_SYMBOL(get_machine_name);
+#endif
 
 /*
  * Standard memory resources
@@ -694,6 +719,41 @@ static int __init early_mem(char *p)
 }
 early_param("mem", early_mem);
 
+#ifdef CONFIG_FEATURE_HUAWEI_EMERGENCY_DATA
+#define DATAMOUNT_FLAG_FAIL 0x0587C90A
+#define DATAMOUNT_FLAG_SUCCESS 0 // datamount_flag initialization value
+
+/*
+ * global variable datamount_flag has two values:
+ * 0 - init value
+ * 1 - reboot caused by ext4_handle_error, or sync_blockdev return EIO
+ */
+static unsigned int datamount_flag = DATAMOUNT_FLAG_SUCCESS;
+unsigned int get_datamount_flag(void)
+{
+    return datamount_flag;
+}
+EXPORT_SYMBOL(get_datamount_flag);
+void set_datamount_flag(int value)
+{
+    datamount_flag = value;
+}
+EXPORT_SYMBOL(set_datamount_flag);
+
+static int __init early_param_huaweitype(char * p)
+{
+    if (p)
+    {
+        if (!strcmp(p,"mountfail"))
+        {
+            datamount_flag = DATAMOUNT_FLAG_FAIL;
+        }
+    }
+    return 0;
+}
+early_param("androidboot.huawei_type", early_param_huaweitype);
+#endif
+
 static void __init request_standard_resources(const struct machine_desc *mdesc)
 {
 	struct memblock_region *region;
@@ -748,6 +808,56 @@ struct screen_info screen_info = {
  .orig_video_isVGA	= 1,
  .orig_video_points	= 8
 };
+#endif
+#ifdef CONFIG_HUAWEI_KERNEL
+
+typedef enum
+{
+    RUNMODE_FLAG_NORMAL,
+    RUNMODE_FLAG_FACTORY,
+    RUNMODE_FLAG_UNKNOW
+}hw_runmode_t;
+
+#define RUNMODE_FLAG_NORMAL_KEY     "normal"
+#define RUNMODE_FLAG_FACTORY_KEY    "factory"
+
+static hw_runmode_t runmode_factory = RUNMODE_FLAG_UNKNOW;
+
+static int __init init_runmode(char *str)
+{
+    if(!str || !(*str))
+    {
+        printk(KERN_CRIT"%s:get run mode fail\n",__func__);
+        return 0;
+    }
+
+    if(!strncmp(str, RUNMODE_FLAG_FACTORY_KEY, sizeof(RUNMODE_FLAG_FACTORY_KEY)-1))
+    {
+        runmode_factory = RUNMODE_FLAG_FACTORY;
+        printk(KERN_NOTICE "%s:run mode is factory\n", __func__);
+    }
+    else
+    {
+        runmode_factory = RUNMODE_FLAG_NORMAL;
+        printk(KERN_NOTICE "%s:run mode is normal\n", __func__);
+    }
+    return 1;
+}
+
+__setup("androidboot.huawei_swtype=", init_runmode);
+
+
+/* the function interface to check factory/normal mode in kernel */
+bool is_runmode_factory(void)
+{
+    if (RUNMODE_FLAG_FACTORY == runmode_factory)
+        return true;
+    else
+        return false;
+}
+
+EXPORT_SYMBOL(is_runmode_factory);
+
 #endif
 
 static int __init customize_machine(void)

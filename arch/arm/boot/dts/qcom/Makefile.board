@@ -1,0 +1,45 @@
+dtb-$(CONFIG_ARCH_MSM8916) += 	huawei_g760_l01_vd.dtb \
+	huawei_t18_823l_va.dtb \
+	huawei_g760_tl_vb.dtb \
+	huawei_g760s_cl_va.dtb \
+	huawei_g760_l03_va.dtb \
+	huawei_g760s_ul_va.dtb \
+	huawei_cherry_cl20_vb.dtb \
+	huawei_cherry_cl10_vd.dtb \
+	huawei_g760_l01_vb.dtb \
+	huawei_g760_l01_va.dtb \
+	huawei_g760_l11_va.dtb \
+	huawei_g760_tl_va.dtb \
+	huawei_cherry_cl20_vc.dtb \
+	huawei_g760s_cl_vb.dtb \
+	huawei_g760_l01_vc.dtb \
+	huawei_g760_tl_vc.dtb \
+	huawei_g760_ul20_va.dtb \
+	huawei_g760_l02_va.dtb \
+	huawei_cherry_cl10_vc.dtb \
+	huawei_cherry_cl10_vb.dtb \
+	huawei_t18_821l_va.dtb \
+	huawei_g760_ul20_vb.dtb \
+	huawei_g760_l03_vb.dtb \
+	huawei_t18_821w_va.dtb \
+	huawei_cherry_cl20_vd.dtb \
+
+ 
+ 
+DTB_NAMES := $(subst $\",,$(CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE_NAMES))
+ifneq ($(DTB_NAMES),)
+DTB_LIST := $(addsuffix .dtb,$(DTB_NAMES))
+else
+DTB_LIST := $(dtb-y)
+endif
+
+targets += dtbs
+targets += $(addprefix ../, $(DTB_LIST))
+
+
+$(obj)/../%.dtb: $(src)/%.dts FORCE
+	$(call if_changed_dep,dtc)
+
+dtbs: $(addprefix $(obj)/../,$(DTB_LIST))
+
+clean-files := *.dtb

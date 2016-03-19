@@ -118,7 +118,19 @@ struct wcd_mbhc_imped_detect_cfg {
 	u16 _alpha[0]; /* alpha[n_rload] */
 	u16 _beta[3];
 } __packed;
-
+struct wcd_mbhc_btn_adapt_cfg_data {
+    bool adapt_eable;
+    u16 btn0_low;
+    u16 btn0_high;
+    u16 btn1_low;
+    u16 btn1_high;
+    u16 btn2_low;
+    u16 btn2_high;
+    u16 btn3_low;
+    u16 btn3_high;
+    u16 btn4_low;
+    u16 btn4_high;
+};
 struct wcd_mbhc_config {
 	bool read_fw_bin;
 	void *calibration;
@@ -126,8 +138,8 @@ struct wcd_mbhc_config {
 	bool mono_stero_detection;
 	bool (*swap_gnd_mic) (struct snd_soc_codec *codec);
 	bool hs_ext_micbias;
+	struct wcd_mbhc_btn_adapt_cfg_data adapt_cfg_data;
 };
-
 struct wcd_mbhc_intr {
 	int mbhc_sw_intr;
 	int mbhc_btn_press_intr;

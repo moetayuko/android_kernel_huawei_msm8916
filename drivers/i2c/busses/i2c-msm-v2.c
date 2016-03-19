@@ -32,6 +32,8 @@
 #include <linux/dma-mapping.h>
 #include <linux/i2c.h>
 #include <linux/of.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <linux/of_i2c.h>
 #include <linux/debugfs.h>
 #include <linux/msm-sps.h>
@@ -61,7 +63,7 @@ static const u32 i2c_msm_mode_to_reg_tbl[] = {
 	0x1, /* map I2C_MSM_XFER_MODE_BLOCK -> binary 01 */
 	0x3  /* map I2C_MSM_XFER_MODE_BAM -> binary 11 */
 };
-
+volatile int i2c_msm_pm_flags = 0;
 /* Forward declarations */
 static bool i2c_msm_xfer_next_buf(struct i2c_msm_ctrl *ctrl);
 static int i2c_msm_xfer_wait_for_completion(struct i2c_msm_ctrl *ctrl,
@@ -75,7 +77,21 @@ static int  i2c_msm_fifo_create_struct(struct i2c_msm_ctrl *ctrl);
 static int  i2c_msm_bam_create_struct(struct i2c_msm_ctrl *ctrl);
 static int  i2c_msm_blk_create_struct(struct i2c_msm_ctrl *ctrl);
 static void i2c_msm_clk_path_init(struct i2c_msm_ctrl *ctrl);
+static int i2c_msm_recover_bus_busy(struct i2c_msm_ctrl *ctrl);
+#ifdef CONFIG_HUAWEI_KERNEL
+static int i2c_maxim_recover_bus(struct i2c_msm_ctrl *ctrl);
 
+static int i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
+				enum i2c_msm_pinctl_state pinctl_state);
+				
+#define MAX77819_ADDR 0x66
+#define MAX17048_ADDR 0x36
+#define I2C_BUS6_ADDR 0x78ba000
+#define MAXIM_NUM_STOP 9
+#define MAXIM_ERROR_NO 5555
+#define GPIO_HIGH 1
+#define GPIO_LOW 0
+#endif
 /* i2c_msm_bam_get_struct: return the bam structure
  * if not created, call i2c_msm_bam_create_struct to create it
  */
@@ -914,9 +930,6 @@ i2c_msm_qup_state_wait_valid(struct i2c_msm_ctrl *ctrl,
 {
 	u32 status;
 	void __iomem  *base     = ctrl->rsrcs.base;
-	unsigned long  start   = jiffies;
-	unsigned long  timeout = start +
-				 msecs_to_jiffies(I2C_MSM_MAX_POLL_MSEC);
 	int ret      = 0;
 	int read_cnt = 0;
 
@@ -938,7 +951,14 @@ i2c_msm_qup_state_wait_valid(struct i2c_msm_ctrl *ctrl,
 				goto poll_valid_end;
 		}
 
-	} while (time_before_eq(jiffies, timeout));
+		/*
+		 * Sleeping for 1-1.5 ms for every 100 iterations and break if
+		 * iterations crosses the 1500 marks allows roughly 10-15 msec
+		 * of time to get the core to valid state.
+		 */
+		if (!(read_cnt % 100))
+			usleep_range(1000, 1500);
+	} while (read_cnt <= 1500);
 
 	ret = -ETIMEDOUT;
 	dev_err(ctrl->dev,
@@ -1098,16 +1118,14 @@ struct i2c_msm_clk_div_fld {
 	u8                 fs_div;
 	u8                 ht_div;
 };
-
 /*
  * divider values as per HW Designers
  */
 static struct i2c_msm_clk_div_fld i2c_msm_clk_div_map[] = {
-	{KHz(100), 124, 62},
+	{KHz(100), 93, 93},
 	{KHz(400),  28, 14},
 	{KHz(1000),  8,  5},
 };
-
 /* @return zero on success */
 static int i2c_msm_set_mstr_clk_ctl(struct i2c_msm_ctrl *ctrl)
 {
@@ -2777,10 +2795,10 @@ static irqreturn_t i2c_msm_qup_isr(int irq, void *devid)
 
 		/* HW workaround: when interrupt is level triggerd, more
 		 * than one interrupt may fire in error cases. Thus we
-		 * resetting the QUP core state immediately in the ISR
-		 * to ward off the next interrupt.
+		 * change the QUP core state to Reset immediately in the
+		 * ISR to ward off the next interrupt.
 		 */
-		i2c_msm_qup_state_set(ctrl, QUP_STATE_RESET);
+		writel_relaxed(QUP_STATE_RESET, ctrl->rsrcs.base + QUP_STATE);
 
 		need_wmb        = true;
 		signal_complete = true;
@@ -2896,9 +2914,7 @@ static int i2c_msm_qup_init(struct i2c_msm_ctrl *ctrl)
 	i2c_msm_qup_sw_reset(ctrl);
 	i2c_msm_qup_state_set(ctrl, QUP_STATE_RESET);
 
-	writel_relaxed(QUP_APP_CLK_ON_EN | QUP_CORE_CLK_ON_EN |
-				QUP_FIFO_CLK_GATE_EN,
-				base + QUP_CONFIG);
+	writel_relaxed(QUP_N_VAL | QUP_MINI_CORE_I2C_VAL, base + QUP_CONFIG);
 
 	writel_relaxed(QUP_OUTPUT_OVER_RUN_ERR_EN | QUP_INPUT_UNDER_RUN_ERR_EN
 		     | QUP_OUTPUT_UNDER_RUN_ERR_EN | QUP_INPUT_OVER_RUN_ERR_EN,
@@ -3002,22 +3018,55 @@ static void i2c_msm_qup_teardown(struct i2c_msm_ctrl *ctrl)
 			(*ctrl->ver.xfer_mode[i]->teardown)(ctrl);
 	}
 }
-
 static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 {
 	/* poll until bus is released */
+	int ret = 0;
+	/* Add return value for maxim chip */
+#ifdef CONFIG_HUAWEI_KERNEL
+	int ret_maxim = 0;
+#endif
 	if (i2c_msm_qup_poll_bus_active_unset(ctrl)) {
 		if ((ctrl->xfer.err & BIT(I2C_MSM_ERR_ARB_LOST)) ||
 		    (ctrl->xfer.err & BIT(I2C_MSM_ERR_BUS_ERR)) ||
 		    (ctrl->xfer.err & BIT(I2C_MSM_ERR_TIMEOUT))) {
 			if (i2c_msm_qup_slv_holds_bus(ctrl))
-				qup_i2c_recover_bus_busy(ctrl);
+			{
+				dev_err(ctrl->dev,"i2c bus is holded by slv\n");
+#ifdef CONFIG_HUAWEI_KERNEL
+				ret_maxim = 0;
+				if ((MAX77819_ADDR == ctrl->xfer.msgs->addr) || (MAX17048_ADDR == ctrl->xfer.msgs->addr))
+				{
+					if (i2c_maxim_recover_bus(ctrl))
+					{
+						ret_maxim = MAXIM_ERROR_NO;
+					}
+				}
+				else
+				{
+#endif
+					ret = i2c_msm_recover_bus_busy(ctrl);
+					if (ret == -1)
+					{
+						qup_i2c_recover_bus_busy(ctrl);
+					}
+#ifdef CONFIG_HUAWEI_KERNEL
+				}
+#endif
+			}
 
 			/* do not generalize error to EIO if its already set */
 			if (!err)
 				err = -EIO;
 		}
 	}
+
+	/*
+	 * Disable the IRQ before change to reset state to avoid
+	 * spurious interrupts.
+	 *
+	 */
+	disable_irq(ctrl->rsrcs.irq);
 
 	/* flush bam data and reset the qup core in timeout error.
 	 * for other error case, its handled by the ISR
@@ -3028,8 +3077,8 @@ static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 			writel_relaxed(QUP_I2C_FLUSH, ctrl->rsrcs.base
 								+ QUP_STATE);
 
-		/* reset the sw core */
-		i2c_msm_qup_sw_reset(ctrl);
+		/* reset the qup core */
+		i2c_msm_qup_state_set(ctrl, QUP_STATE_RESET);
 		err = -ETIMEDOUT;
 	}
 
@@ -3040,10 +3089,15 @@ static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 
 	if (ctrl->xfer.err & BIT(I2C_MSM_ERR_NACK))
 		err = -ENOTCONN;
-
+	/* return a specific value after i2c recovery. */
+#ifdef CONFIG_HUAWEI_KERNEL
+	if (0 != ret_maxim)
+	{
+		err = -ret_maxim;
+	}
+#endif
 	return err;
 }
-
 static enum i2c_msm_xfer_mode_id
 i2c_msm_qup_choose_mode(struct i2c_msm_ctrl *ctrl)
 {
@@ -3339,8 +3393,6 @@ static void i2c_msm_pm_xfer_end(struct i2c_msm_ctrl *ctrl)
 	struct i2c_msm_xfer_mode_bam *bam  = i2c_msm_bam_get_struct(ctrl);
 	struct i2c_msm_bam_pipe      *prod = &bam->pipe[I2C_MSM_BAM_PROD];
 	struct i2c_msm_bam_pipe      *cons = &bam->pipe[I2C_MSM_BAM_CONS];
-
-	disable_irq(ctrl->rsrcs.irq);
 
 	atomic_set(&ctrl->xfer.is_active, 0);
 
@@ -3638,13 +3690,95 @@ i2c_msm_rsrcs_gpio_get_state(struct i2c_msm_ctrl *ctrl, const char *name)
 	return pin_state;
 }
 
+/* Add i2c bus recovery function for maxim chip. */
+#ifdef CONFIG_HUAWEI_KERNEL
+static int i2c_maxim_recover_bus(struct i2c_msm_ctrl *ctrl)
+{
+	int ret = 0;
+	int i = 0;
+	int retry = 0;
+	u32 bus_clr, bus_active,status;
+	u32 gpio_bit_data = 0;
+
+	i2c_msm_pm_flags = ctrl->pwr_state;
+	
+	dev_info(ctrl->dev, "Executing MAXIM bus recovery procedure (9 stop)\n");
+	ret = i2c_msm_pm_pinctrl_state(ctrl,I2C_MSM_DFS_DEFULT);
+	if(ret)
+		return 0;
+
+	/*if data is low ,then set high*/
+	gpio_bit_data = gpio_get_value(ctrl->gpios[I2C_MSM_DEFULT_DATA]);
+	if (gpio_bit_data == GPIO_LOW)
+	{
+		for (i =0; i< MAXIM_NUM_STOP; i++)
+		{
+			ret = gpio_direction_output(ctrl->gpios[I2C_MSM_DEFULT_CLK],GPIO_LOW);
+			if(ret < 0) {
+				dev_err(ctrl->dev, "i2c msm gpio_direction_output error\n");
+			}
+			ret = gpio_direction_output(ctrl->gpios[I2C_MSM_DEFULT_DATA],GPIO_LOW);
+			if(ret < 0) {
+				dev_err(ctrl->dev, "i2c msm gpio_direction_output error\n");
+			}
+			usleep(1);
+			ret = gpio_direction_output(ctrl->gpios[I2C_MSM_DEFULT_CLK],GPIO_HIGH);
+			if(ret < 0) {
+				dev_err(ctrl->dev, "i2c msm gpio_direction_output error\n");
+			}
+			ret = gpio_direction_output(ctrl->gpios[I2C_MSM_DEFULT_DATA],GPIO_HIGH);
+			if(ret < 0) {
+				dev_err(ctrl->dev, "i2c msm gpio_direction_output error\n");
+			}
+			usleep(1);
+		}
+	}
+
+	if(i2c_msm_pm_flags == I2C_MSM_DFS_ACTIVE){
+		i2c_msm_pm_pinctrl_state(ctrl, I2C_MSM_DFS_ACTIVE);
+	}
+	else if(i2c_msm_pm_flags == MSM_I2C_PM_SUSPENDED){
+		i2c_msm_pm_pinctrl_state(ctrl, MSM_I2C_PM_SUSPENDED);
+	}
+
+	for (i = I2C_MSM_DEFULT_CLK; i < I2C_MSM_DEFULT_MAX_GPIO; i++) {
+		gpio_free(ctrl->gpios[i]);
+	}
+
+	usleep(1);
+
+	do {
+		qup_i2c_recover_bus_busy(ctrl);
+		bus_clr    = readl_relaxed(ctrl->rsrcs.base +
+							QUP_I2C_MASTER_BUS_CLR);
+		status     = readl_relaxed(ctrl->rsrcs.base + QUP_I2C_STATUS);
+		bus_active = status & I2C_STATUS_BUS_ACTIVE;
+		if (++retry >= I2C_MSM_RECOVERY_BUS_TIMES)
+			break;
+	} while (bus_clr || bus_active);
+	
+	dev_info(ctrl->dev, "Qcom Bus recovery %s after %d retries\n",
+			(bus_clr || bus_active) ? "fail" : "success", retry);
+	if (bus_clr || bus_active)
+	{
+		return 0;
+	}
+	else
+	{
+		return 1;
+	}
+}
+#endif
+
 /*
  * i2c_msm_rsrcs_gpio_pinctrl_init: initializes the pinctrl for i2c gpios
  *
  * @pre platform data must be initialized
  */
-static int i2c_msm_rsrcs_gpio_pinctrl_init(struct i2c_msm_ctrl *ctrl)
+static int i2c_msm_rsrcs_gpio_pinctrl_init(struct i2c_msm_ctrl *ctrl,struct platform_device *pdev)
 {
+	int i =0;
+	struct device_node *node = pdev->dev.of_node;
 	ctrl->rsrcs.pinctrl = devm_pinctrl_get(ctrl->dev);
 	if (IS_ERR_OR_NULL(ctrl->rsrcs.pinctrl)) {
 		dev_err(ctrl->dev, "error devm_pinctrl_get() failed err:%ld\n",
@@ -3657,37 +3791,136 @@ static int i2c_msm_rsrcs_gpio_pinctrl_init(struct i2c_msm_ctrl *ctrl)
 
 	ctrl->rsrcs.gpio_state_suspend =
 		i2c_msm_rsrcs_gpio_get_state(ctrl, I2C_MSM_PINCTRL_SUSPEND);
-
+	ctrl->rsrcs.gpio_state_defult = 
+		i2c_msm_rsrcs_gpio_get_state(ctrl, I2C_MSM_PINCTRL_DEFULT);
+	if (IS_ERR_OR_NULL(ctrl->rsrcs.gpio_state_defult))
+		dev_err(ctrl->dev,"%s: can not get gpio default pinstate\n", __func__);
+	else{
+		dev_err(ctrl->dev,"%s: get gpio default pinstate\n", __func__);
+		for (i = I2C_MSM_DEFULT_CLK; i < I2C_MSM_DEFULT_MAX_GPIO; i++) {
+			ctrl->gpios[i] = of_get_gpio(node, i);
+			dev_info(ctrl->dev, "%s: of_get_gpio[%d] = %d\n",__func__, i,ctrl->gpios[i]);
+			if (ctrl->gpios[i] < 0)
+				dev_err(ctrl->dev, "%s: Fail to get msm gpio: %d\n",__func__, i);
+		}
+	}
 	return 0;
 }
 
-static void i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
-				bool runtime_active)
+static int i2c_msm_pm_pinctrl_state(struct i2c_msm_ctrl *ctrl,
+				enum i2c_msm_pinctl_state pinctl_state)
 {
 	struct pinctrl_state *pins_state;
 	const char           *pins_state_name;
+	int i = 0;
+	int ret =0;
 
-	if (runtime_active) {
+	if (pinctl_state == I2C_MSM_DFS_ACTIVE) {
 		pins_state      = ctrl->rsrcs.gpio_state_active;
 		pins_state_name = I2C_MSM_PINCTRL_ACTIVE;
-	} else {
+	} else if(pinctl_state == I2C_MSM_DFS_SUSPEND){
 		pins_state      = ctrl->rsrcs.gpio_state_suspend;
 		pins_state_name = I2C_MSM_PINCTRL_SUSPEND;
+	}else if(pinctl_state == I2C_MSM_DFS_DEFULT){
+		pins_state      = ctrl->rsrcs.gpio_state_defult;
+		pins_state_name = I2C_MSM_PINCTRL_DEFULT;
 	}
 
 	if (!IS_ERR_OR_NULL(pins_state)) {
-		int ret = pinctrl_select_state(ctrl->rsrcs.pinctrl, pins_state);
-		if (ret)
+		ret = pinctrl_select_state(ctrl->rsrcs.pinctrl, pins_state);
+		if (ret){
 			dev_err(ctrl->dev,
-			"error pinctrl_select_state(%s) err:%d\n",
-			pins_state_name, ret);
+				"error pinctrl_select_state(%s) err:%d\n",pins_state_name, ret);
+			return -ENODATA;
+		}
+		else{
+			if(pinctl_state == I2C_MSM_DFS_DEFULT){
+				dev_info(ctrl->dev,"i2c msm pins_state is dfs defult\n");
+				for (i = I2C_MSM_DEFULT_CLK; i < I2C_MSM_DEFULT_MAX_GPIO; i++) {
+					ret = gpio_request_one(ctrl->gpios[i],GPIOF_OUT_INIT_HIGH, NULL);
+					if (ret) {
+						dev_err(ctrl->dev,
+							"%s: request failed for gpio:%d\n",__func__, ctrl->gpios[i]);
+						return -ENODATA;
+					}
+				}
+			}
+		}
 	} else {
 		dev_err(ctrl->dev,
-			"error pinctrl state-name:'%s' is not configured\n",
-			pins_state_name);
+			"error pinctrl state-name:'%s' is not configured\n",pins_state_name);
+		return -ENODATA;
 	}
+	return 0;
 }
 
+static int i2c_msm_recover_bus_busy(struct i2c_msm_ctrl *ctrl)
+{
+		int ret = 0;
+		int i = 0;
+		int retry = 0;
+		u32 bus_clr, bus_active,status;
+		u32 gpio_bit_data,gpio_bit_clk = 0;
+		/* If I2C BUS6 chip, use the qcom default recovery solution, return -1 */
+#ifdef CONFIG_HUAWEI_KERNEL
+		if (I2C_BUS6_ADDR == (u32)(ctrl->rsrcs.mem->start))
+		{
+			return -1;
+		}
+#endif	
+		i2c_msm_pm_flags = ctrl->pwr_state;
+		for(i = 0;i  < I2C_MSM_RECOVERY_BUS_TIMES; i++){
+			dev_info(ctrl->dev, " i2c retry times =%d\n",i);
+			ret = i2c_msm_pm_pinctrl_state(ctrl,I2C_MSM_DFS_DEFULT);
+			if(ret)
+				return -1;
+			/*if scl is low ,then set high*/
+			gpio_bit_clk = gpio_get_value(ctrl->gpios[I2C_MSM_DEFULT_CLK]);
+			dev_info(ctrl->dev, " I2C_MSM_DEFULT_CLK =%d\n",gpio_bit_clk);
+			if(gpio_bit_clk == 0){
+				ret = gpio_direction_output(ctrl->gpios[I2C_MSM_DEFULT_CLK],1);
+				if(ret < 0) {
+					dev_err(ctrl->dev, "i2c msm gpio_direction_output error\n");
+				}
+			}
+			/*if data is low ,then set high*/
+			gpio_bit_data = gpio_get_value(ctrl->gpios[I2C_MSM_DEFULT_DATA]);
+			dev_info(ctrl->dev, " I2C_MSM_DEFULT_DATA =%d\n",gpio_bit_data);
+			if(gpio_bit_data == 0){
+				ret = gpio_direction_output(ctrl->gpios[I2C_MSM_DEFULT_DATA],1);
+				if(ret < 0) {
+					dev_err(ctrl->dev, "i2c msm gpio_direction_output error\n");
+				}
+			}
+			if(i2c_msm_pm_flags == I2C_MSM_DFS_ACTIVE){
+				i2c_msm_pm_pinctrl_state(ctrl, I2C_MSM_DFS_ACTIVE);
+			}
+			else if(i2c_msm_pm_flags == MSM_I2C_PM_SUSPENDED){
+				i2c_msm_pm_pinctrl_state(ctrl, MSM_I2C_PM_SUSPENDED);
+			}
+			for (ret = I2C_MSM_DEFULT_CLK; ret < I2C_MSM_DEFULT_MAX_GPIO; ret++) {
+				gpio_free(ctrl->gpios[ret]);
+			}
+			if((gpio_bit_data == 1) && (gpio_bit_clk == 1)){
+				usleep(5);
+				dev_info(ctrl->dev, " Successful set sda and scl high, times =%d\n",i);
+				dev_info(ctrl->dev, "Executing bus recovery procedure (9 clk pulse)\n");
+				do {
+					qup_i2c_recover_bus_busy(ctrl);
+					bus_clr    = readl_relaxed(ctrl->rsrcs.base +
+										QUP_I2C_MASTER_BUS_CLR);
+					status     = readl_relaxed(ctrl->rsrcs.base + QUP_I2C_STATUS);
+					bus_active = status & I2C_STATUS_BUS_ACTIVE;
+					if (++retry >= I2C_MSM_RECOVERY_BUS_TIMES)
+						break;
+				} while (bus_clr || bus_active);
+				dev_info(ctrl->dev, "Bus recovery %s after %d retries\n",
+						(bus_clr || bus_active) ? "fail" : "success", retry);
+				break;
+			}
+		}
+		return 0;
+}
 /*
  * i2c_msm_rsrcs_clk_init: get clocks and set rate
  *
@@ -3890,7 +4123,6 @@ static void i2c_msm_dbgfs_teardown(struct i2c_msm_ctrl *ctrl)
 static void i2c_msm_dbgfs_init(struct i2c_msm_ctrl *ctrl) {}
 static void i2c_msm_dbgfs_teardown(struct i2c_msm_ctrl *ctrl) {}
 #endif
-
 static void i2c_msm_pm_suspend(struct device *dev)
 {
 	struct i2c_msm_ctrl *ctrl = dev_get_drvdata(dev);
@@ -3900,7 +4132,7 @@ static void i2c_msm_pm_suspend(struct device *dev)
 		return;
 	}
 	i2c_msm_dbg(ctrl, MSM_DBG, "suspending...");
-	i2c_msm_pm_pinctrl_state(ctrl, false);
+	i2c_msm_pm_pinctrl_state(ctrl, I2C_MSM_DFS_SUSPEND);
 	i2c_msm_clk_path_unvote(ctrl);
 	ctrl->pwr_state = MSM_I2C_PM_SUSPENDED;
 	return;
@@ -3916,11 +4148,10 @@ static int i2c_msm_pm_resume(struct device *dev)
 	i2c_msm_dbg(ctrl, MSM_DBG, "resuming...");
 
 	i2c_msm_clk_path_vote(ctrl);
-	i2c_msm_pm_pinctrl_state(ctrl, true);
+	i2c_msm_pm_pinctrl_state(ctrl, I2C_MSM_DFS_ACTIVE);
 	ctrl->pwr_state = MSM_I2C_PM_ACTIVE;
 	return 0;
 }
-
 #ifdef CONFIG_PM
 /*
  * i2c_msm_pm_sys_suspend_noirq: system power management callback
@@ -4122,11 +4353,9 @@ static int i2c_msm_probe(struct platform_device *pdev)
 
 	i2c_msm_pm_clk_disable_unprepare(ctrl);
 	i2c_msm_clk_path_unvote(ctrl);
-
-	ret = i2c_msm_rsrcs_gpio_pinctrl_init(ctrl);
+	ret = i2c_msm_rsrcs_gpio_pinctrl_init(ctrl,pdev);
 	if (ret)
 		goto err_no_pinctrl;
-
 	i2c_msm_pm_rt_init(ctrl->dev);
 
 	ret = i2c_msm_rsrcs_irq_init(pdev, ctrl);

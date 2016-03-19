@@ -1,0 +1,22 @@
+&soc {
+        huawei,huawei-polling-support {
+                compatible = "huawei-polling-support";
+                huawei,support-polling;
+        };
+     };
+&tlmm_pinmux {
+	sdhc2_cd_pin {
+		qcom,pins = <&gp 38>;
+		qcom,num-grp-pins = <1>;
+		qcom,pin-func = <0>;
+		label = "cd-gpio";
+		sdc2_cd_on: cd_on {
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+		sdc2_cd_off: cd_off {
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};

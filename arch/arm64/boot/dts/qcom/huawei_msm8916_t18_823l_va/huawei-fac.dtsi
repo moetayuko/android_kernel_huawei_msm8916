@@ -1,0 +1,9 @@
+/ {
+        huawei_fac_info {
+                  compatible = "huawei,hw_fac_info";
+                  fac,product_name = "Mediapad T1 8.0 LTE";
+                  fac,hardware_ver = "SH1T1823LM_VERA";
+                  fac,software_ver = "MSM8916_T18_823L_VA";
+                  status = "ok";
+        };
+};

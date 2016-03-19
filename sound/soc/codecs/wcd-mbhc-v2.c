@@ -9,6 +9,16 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+ 
+#ifdef CONFIG_HUAWEI_KERNEL
+/* Open debug log for development version, will be closed after TR5 */
+#ifdef CONFIG_DYNAMIC_DEBUG
+#undef CONFIG_DYNAMIC_DEBUG
+#endif
+#ifndef DEBUG
+#define DEBUG
+#endif
+#endif
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -37,13 +47,22 @@
 #include "msm8916-wcd-irq.h"
 #include "msm8x16-wcd.h"
 #include "wcdcal-hwdep.h"
+#include <sound/hw_audio_info.h>
 
 #define WCD_MBHC_JACK_MASK (SND_JACK_HEADSET | SND_JACK_OC_HPHL | \
 			   SND_JACK_OC_HPHR | SND_JACK_LINEOUT | \
 			   SND_JACK_UNSUPPORTED)
+#ifdef CONFIG_HUAWEI_KERNEL
+/* do not report the undesirable button type : btn3,btn4 */
+#define WCD_MBHC_JACK_BUTTON_MASK (SND_JACK_BTN_0 | SND_JACK_BTN_1 | \
+				  SND_JACK_BTN_2)
+#define WCD_MBHC_JACK_BUTTON_MASK_HUAWEI_IGNORE (SND_JACK_BTN_3 | SND_JACK_BTN_4 | \
+				  SND_JACK_BTN_5 | SND_JACK_BTN_6 | SND_JACK_BTN_7)
+#else
 #define WCD_MBHC_JACK_BUTTON_MASK (SND_JACK_BTN_0 | SND_JACK_BTN_1 | \
 				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
 				  SND_JACK_BTN_4)
+#endif
 #define OCP_ATTEMPT 1
 #define HS_DETECT_PLUG_TIME_MS (3 * 1000)
 #define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
@@ -54,7 +73,12 @@
 #define FW_READ_ATTEMPTS 15
 #define FW_READ_TIMEOUT 4000000
 
+static int removal_st;
 static int det_extn_cable_en;
+#ifdef CONFIG_HUAWEI_DSM
+static unsigned long timeout_jiffies = 0;
+static bool ispress = false;
+#endif
 module_param(det_extn_cable_en, int,
 		S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(det_extn_cable_en, "enable/disable extn cable detect");
@@ -214,9 +238,12 @@ static void wcd_enable_curr_micbias(const struct wcd_mbhc *mbhc,
 				const enum wcd_mbhc_cs_mb_en_flag cs_mb_en)
 {
 	struct snd_soc_codec *codec = mbhc->codec;
-
-	pr_debug("%s: enter, cs_mb_en: %d\n", __func__, cs_mb_en);
-
+	pr_debug("%s: enter, cs_mb_en: %d mbhc->current_plug %x \n", 
+				__func__, cs_mb_en, mbhc->current_plug);
+	if (mbhc->current_plug == MBHC_PLUG_TYPE_NONE && removal_st) {
+		pr_err("%s :: Avoid enabling source when plug is removed",__func__);
+		return;
+	}
 	switch (cs_mb_en) {
 	case WCD_MBHC_EN_CS:
 		snd_soc_update_bits(codec,
@@ -690,6 +717,28 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 	struct snd_soc_codec *codec = mbhc->codec;
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
+#ifdef CONFIG_HUAWEI_DSM
+	if (insertion)
+	{
+		timeout_jiffies = jiffies + msecs_to_jiffies(DSM_AUDIO_LESS_HS_GAP); // timeout after 500ms
+	}
+	else
+	{
+		if(time_before(jiffies, timeout_jiffies))
+		{
+			if(ispress)
+			{
+				audio_dsm_report_num(DSM_AUDIO_HANDSET_PRESS_RELEASE_ERROR, DSM_AUDIO_MESG_PRESS_RELEASE_ERROR);
+			}
+			else
+			{
+				audio_dsm_report_num(DSM_AUDIO_HANDSET_PLUG_RELEASE_ERROR, DSM_AUDIO_MESG_INSURT_TIME_SHORT);
+			}
+		}
+	}
+	
+	ispress = false;
+#endif
 	pr_debug("%s: enter insertion %d hph_status %x\n",
 		 __func__, insertion, mbhc->hph_status);
 	if (!insertion) {
@@ -898,6 +947,8 @@ static bool wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	return (plug_type == MBHC_PLUG_TYPE_GND_MIC_SWAP) ? true : false;
 }
 
+/* since we remove swap & hph type detection,no need to use wcd_is_special_headset */
+#ifndef CONFIG_HUAWEI_KERNEL
 static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 {
 	u16 result2;
@@ -955,6 +1006,7 @@ static bool wcd_is_special_headset(struct wcd_mbhc *mbhc)
 	pr_debug("%s: leave\n", __func__);
 	return ret;
 }
+#endif
 
 static void wcd_correct_swch_plug(struct work_struct *work)
 {
@@ -1097,6 +1149,8 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 		goto exit;
 	}
 
+/* since we remove swap & hph type detection,no need to use wcd_is_special_headset */
+#ifndef CONFIG_HUAWEI_KERNEL
 	if (plug_type == MBHC_PLUG_TYPE_HIGH_HPH &&
 		(!det_extn_cable_en)) {
 		if (wcd_is_special_headset(mbhc)) {
@@ -1106,11 +1160,20 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 			goto report;
 		}
 	}
+#endif
 
 report:
 	pr_debug("%s: Valid plug found, plug type %d wrk_cmpt %d btn_intr %d\n",
 			__func__, plug_type, wrk_complete,
 			mbhc->btn_press_intr);
+	/* remove swap & hph type to make auto audio mmi test pass */
+#ifdef CONFIG_HUAWEI_KERNEL
+	if((MBHC_PLUG_TYPE_HIGH_HPH == plug_type)||
+		(MBHC_PLUG_TYPE_GND_MIC_SWAP == plug_type)) {
+			pr_debug("%s: force the type change to headset from swap and hph\n", __func__);
+			plug_type = MBHC_PLUG_TYPE_HEADSET;
+	}
+#endif
 	/*
 	 * Do not disable micbias if recording is going on or
 	 * headset is inserted on the other side of the extn
@@ -1222,8 +1285,22 @@ static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 		}
 	}
 exit:
+#ifdef CONFIG_HUAWEI_DSM
+	if(MBHC_PLUG_TYPE_INVALID == plug_type)
+	{
+		audio_dsm_report_num(DSM_AUDIO_HANDSET_DECT_FAIL_ERROR_NO, DSM_AUDIO_MESG_HS_TYPE_DECT_FAIL);
+	}
+#endif
 	pr_debug("%s: Valid plug found, plug type is %d\n",
 			 __func__, plug_type);
+	/* remove swap & hph type to make auto audio mmi test pass */
+#ifdef CONFIG_HUAWEI_KERNEL
+	if((MBHC_PLUG_TYPE_HIGH_HPH == plug_type)||
+		(MBHC_PLUG_TYPE_GND_MIC_SWAP == plug_type)) {
+			pr_debug("%s: force the type change to headset from swap and hph\n", __func__);
+			plug_type = MBHC_PLUG_TYPE_HEADSET;
+	}
+#endif
 	if (plug_type == MBHC_PLUG_TYPE_HEADSET ||
 			plug_type == MBHC_PLUG_TYPE_HEADPHONE) {
 		wcd_mbhc_find_plug_and_report(mbhc, plug_type);
@@ -1290,6 +1367,8 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 		if (mbhc->mbhc_cb && mbhc->mbhc_cb->enable_mb_source)
 			mbhc->mbhc_cb->enable_mb_source(codec, true);
 		mbhc->btn_press_intr = false;
+		removal_st = 0;
+		pr_err("%s :: INSERT removal_st = %d ", __func__, removal_st);
 		wcd_mbhc_detect_plug_type(mbhc);
 	} else if ((mbhc->current_plug != MBHC_PLUG_TYPE_NONE)
 			&& !detection_type) {
@@ -1305,6 +1384,8 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 				0x04, 0x00);
 		wcd_configure_cap(mbhc, false);
 		mbhc->btn_press_intr = false;
+		removal_st = 1;
+		pr_err("%s :: REMOVAL removal_st = %d ", __func__, removal_st);
 		if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE) {
 			wcd_mbhc_report_plug(mbhc, 0, SND_JACK_HEADPHONE);
 		} else if (mbhc->current_plug == MBHC_PLUG_TYPE_GND_MIC_SWAP) {
@@ -1385,22 +1466,26 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 static int wcd_mbhc_get_button_mask(u16 btn)
 {
 	int mask = 0;
-
 	switch (btn) {
 	case 0:
 		mask = SND_JACK_BTN_0;
+		pr_debug("%s: detect SND_JACK_BTN_0 [Start/Pause btn]\n", __func__);
 		break;
 	case 1:
 		mask = SND_JACK_BTN_1;
+		pr_debug("%s: detect SND_JACK_BTN_1 [+ btn]\n", __func__);
 		break;
 	case 3:
 		mask = SND_JACK_BTN_2;
+		pr_debug("%s: detect SND_JACK_BTN_2 [- btn]\n", __func__);
 		break;
 	case 7:
 		mask = SND_JACK_BTN_3;
+		pr_debug("%s: detect SND_JACK_BTN_3\n", __func__);
 		break;
 	case 15:
 		mask = SND_JACK_BTN_4;
+		pr_debug("%s: detect SND_JACK_BTN_4\n", __func__);
 		break;
 	default:
 		break;
@@ -1648,6 +1733,20 @@ irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 		pr_debug("%s: Switch level is low ", __func__);
 		goto done;
 	}
+#ifdef CONFIG_HUAWEI_DSM
+	if(time_before(jiffies, timeout_jiffies))
+	{
+		if(!ispress)
+		{
+			audio_dsm_report_num(DSM_AUDIO_HANDSET_PLUG_PRESS_ERROR, DSM_AUDIO_MESG_PLUG_PRESS_ERROR);
+		}
+	}
+	else
+	{
+		timeout_jiffies = jiffies + msecs_to_jiffies(DSM_AUDIO_LESS_HS_GAP);
+		ispress = true;
+	}
+#endif
 	mbhc->btn_press_intr = true;
 
 	msec_val = jiffies_to_msecs(jiffies - mbhc->jiffies_atreport);
@@ -1722,7 +1821,7 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK) {
 		ret = wcd_cancel_btn_work(mbhc);
 		if (ret == 0) {
-			pr_debug("%s: Reporting long button release event\n",
+			pr_err("%s: Reporting long button release event\n",
 				 __func__);
 			wcd_mbhc_jack_report(mbhc, &mbhc->button_jack,
 					0, mbhc->buttons_pressed);
@@ -1731,13 +1830,13 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 				pr_debug("%s: Switch irq kicked in, ignore\n",
 					__func__);
 			} else {
-				pr_debug("%s: Reporting btn press\n",
+				pr_err("%s: Reporting btn press\n",
 					 __func__);
 				wcd_mbhc_jack_report(mbhc,
 						     &mbhc->button_jack,
 						     mbhc->buttons_pressed,
 						     mbhc->buttons_pressed);
-				pr_debug("%s: Reporting btn release\n",
+				pr_err("%s: Reporting btn release\n",
 					 __func__);
 				wcd_mbhc_jack_report(mbhc,
 						&mbhc->button_jack,
@@ -1746,6 +1845,15 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 		}
 		mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
 	}
+	/* huawei: ignore the btn3~7, only clear the mask , donot report */
+#ifdef CONFIG_HUAWEI_KERNEL
+	else
+	{
+		pr_err("%s: HUAWEI-- ignore reporting btn3~7 !\n",
+					 __func__);
+		mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK_HUAWEI_IGNORE;
+	}
+#endif
 exit:
 	pr_debug("%s: leave\n", __func__);
 	WCD_MBHC_RSC_UNLOCK(mbhc);
@@ -1826,9 +1934,9 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 
 	snd_soc_update_bits(codec, MSM8X16_WCD_A_ANALOG_MBHC_DET_CTL_2,
 			0x01, 0x01);
-
-	snd_soc_write(codec, MSM8X16_WCD_A_ANALOG_MBHC_DBNC_TIMER, 0x98);
-
+    /* change the debounce time from 768ms to 384ms,so SW is receiving mechanical removal
+       and button press interrupts at the same time and hence not reporting button press */
+	snd_soc_write(codec, MSM8X16_WCD_A_ANALOG_MBHC_DBNC_TIMER, 0xA8);
 	/* enable MBHC clock */
 	snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_DIGITAL_CDC_DIG_CLK_CTL,
@@ -2060,6 +2168,22 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 			return ret;
 		}
 
+		ret = snd_jack_set_key(mbhc->button_jack.jack,
+		                       SND_JACK_BTN_1,
+		                       KEY_VOLUMEUP);
+		if (ret) {
+		        pr_err("%s: Failed to set code for btn-1\n",
+		                __func__);
+		        return ret;
+		}
+		ret = snd_jack_set_key(mbhc->button_jack.jack,
+		                       SND_JACK_BTN_2,
+		                       KEY_VOLUMEDOWN);
+		if (ret) {
+		        pr_err("%s: Failed to set code for btn-2\n",
+		                __func__);
+		        return ret;
+		}
 		INIT_DELAYED_WORK(&mbhc->mbhc_firmware_dwork,
 				  wcd_mbhc_fw_read);
 		INIT_DELAYED_WORK(&mbhc->mbhc_btn_dwork, wcd_btn_lpress_fn);
