@@ -103,7 +103,8 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8916-qrd-c8817d.dtb \
 	msm8916-qrd-che1-cl20_vb.dtb \
 	msm8916-qrd-che1-cl20_vc.dtb \
 	msm8916-qrd-che1-cl20_vd.dtb \
-	msm8916-qrd-che1-l04.dtb
+	msm8916-qrd-che1-l04_va.dtb \
+	msm8916-qrd-che1-l04_vb.dtb
 else
 dtb-$(CONFIG_ARCH_MSM8916) += msm8916-cdp.dtb \
 	msm8916-cdp-smb1360.dtb \
